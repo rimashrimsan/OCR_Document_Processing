@@ -7,7 +7,7 @@
 
 Most document scanner apps (like CamScanner or Adobe Scan) harvest your data, require subscriptions, and upload your sensitive documents to remote servers for processing. This tool is built on a different philosophy: **Your data never leaves your device.**
 
-Built with **OpenCV**, **MediaPipe AI**, **PyMuPDF**, and **Tesseract OCR**, this is a professional-grade scanner that runs entirely in your browser.
+Built with **OpenCV**, **MediaPipe AI**, **PyMuPDF**, and **Tesseract OCR**, this is a professional grade scanner that runs entirely in your browser.
 
 ---
 
