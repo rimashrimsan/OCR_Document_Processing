@@ -47,7 +47,7 @@ except ImportError:
 # ──────────────────────────────────────────
 # CONFIGURATION & CSS
 # ──────────────────────────────────────────
-st.set_page_config(page_title="Smart Document Scanner", page_icon="📄", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Smart Document Scanner Pro", page_icon="📄", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -63,6 +63,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 QR_DETECTOR = cv2.QRCodeDetector()
+
+# Initialize Session State
+if "cam_active" not in st.session_state:
+    st.session_state.cam_active = False
 
 # ──────────────────────────────────────────
 # SMART CONTEXT & REDACTION ENGINE
@@ -87,30 +91,18 @@ def analyze_document_context(text):
         if any(w in text_lower for w in words):
             found_type = doc_type
             break
-    
-    # Try to find a merchant/company name for filename suggestion
     suggested_name = found_type
-    lines = text.split("\n")
-    if len(lines) > 0:
-        first_line = lines[0].strip()
-        if len(first_line) > 3 and len(first_line) < 30:
-            suggested_name = f"{found_type}_{first_line.replace(' ', '_')}"
-            
+    lines = [l for l in text.split("\n") if l.strip()]
+    if lines:
+        first = lines[0].strip()
+        if 3 < len(first) < 30: suggested_name = f"{found_type}_{first.replace(' ', '_')}"
     return found_type, suggested_name
 
-def redact_sensitive_data(image, text, ocr_data):
-    """
-    Find coordinates of sensitive data in OCR results and black them out in image.
-    (Note: This requires pytesseract.image_to_data for precise locations)
-    """
-    # Simple version for now: if we find matches in text, we alert the user.
-    # To truly black out in image, we need word-level coordinates.
-    redacted_info = []
+def redact_sensitive_data(text):
+    found = []
     for label, pattern in RE_PATTERNS.items():
-        matches = re.findall(pattern, text)
-        if matches:
-            redacted_info.append(label)
-    return redacted_info
+        if re.search(pattern, text): found.append(label)
+    return found
 
 # ──────────────────────────────────────────
 # SIDEBAR
@@ -118,8 +110,8 @@ def redact_sensitive_data(image, text, ocr_data):
 st.sidebar.title("⚙️ Scanner Settings")
 
 st.sidebar.markdown("**Pro Features**")
-pii_redaction_setting = st.sidebar.checkbox("AI PII Detection", value=False, help="Automatically flags sensitive data like Credit Cards or IDs.")
-smart_naming_setting = st.sidebar.checkbox("Smart Filenaming", value=True, help="Suggests filenames based on document content.")
+pii_redaction_setting = st.sidebar.checkbox("AI PII Detection", value=False)
+smart_naming_setting = st.sidebar.checkbox("Smart Filenaming", value=True)
 
 st.sidebar.markdown("**Page Detection**")
 deskew_setting = st.sidebar.checkbox("Perspective Flattening", value=True)
@@ -128,17 +120,17 @@ auto_rotate_setting = st.sidebar.checkbox("Auto Rotate Text", value=True)
 border_cleanup_setting = st.sidebar.checkbox("Remove Edge Borders", value=True)
 
 st.sidebar.markdown("**Cleanup**")
-remove_hands_setting = st.sidebar.checkbox("Remove Hands (AI Powered)", value=True)
+remove_hands_setting = st.sidebar.checkbox("Remove Hands (AI)", value=True)
 table_detection_setting = st.sidebar.checkbox("Detect Tables", value=False)
 
 st.sidebar.markdown("**Lighting**")
-white_balance_setting = st.sidebar.checkbox("Auto White Balance", value=True)
+white_balance_setting = st.sidebar.checkbox("White Balance", value=True)
 shadows_setting = st.sidebar.checkbox("Remove Shadows", value=True)
 enhance_text_setting = st.sidebar.checkbox("Enhance Contrast", value=True)
 bw_setting = st.sidebar.checkbox("Black & White", value=False)
 
 st.sidebar.markdown("***")
-st.sidebar.markdown("**Language (40+ Supported)**")
+st.sidebar.markdown("**Language**")
 if TESSERACT_AVAILABLE:
     lang_options = {
         "English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "Arabic": "ara", 
@@ -153,10 +145,10 @@ if TESSERACT_AVAILABLE:
     searchable_pdf_enabled = st.sidebar.checkbox("Searchable PDF", value=False)
 else:
     ocr_enabled = searchable_pdf_enabled = False
-    st.sidebar.warning("⚠️ OCR Engine not found.")
+    st.sidebar.warning("⚠️ OCR Engine missing.")
 
 st.sidebar.markdown("***")
-output_dpi = st.sidebar.select_slider("Output Quality", [72, 100, 150, 200, 300], 150)
+output_dpi = st.sidebar.select_slider("Quality", [72, 100, 150, 200, 300], 150)
 max_pages_to_process = st.sidebar.slider("Max Pages", 1, 200, 50)
 
 # ──────────────────────────────────────────
@@ -170,7 +162,7 @@ def process_single_image_cached(img_bgr, settings_dict):
 def run_ocr_cached(pil_img, lang):
     if not TESSERACT_AVAILABLE: return ""
     try: return pytesseract.image_to_string(pil_img, lang=lang)
-    except Exception: return "OCR Error"
+    except Exception: return ""
 
 @st.cache_data(show_spinner=False)
 def make_searchable_pdf_page_cached(pil_img, lang):
@@ -195,10 +187,22 @@ def detect_qr(img_bgr):
 # MAIN PAGE
 # ──────────────────────────────────────────
 st.title("📄 Smart Document Scanner Pro")
-st.markdown("Global Multi-Language Support | AI Context Awareness | 100% Private")
+st.markdown("Global Support | AI Context | 100% Private")
 
-camera_photo = st.camera_input("📷 Take a Scan")
-uploaded_files = st.file_uploader("📁 Upload Documents", type=["jpg", "jpeg", "png", "pdf", "tiff", "webp"], accept_multiple_files=True)
+# CAMERA CONTROL (Always ask, never auto-start)
+st.subheader("📷 Scan with Camera")
+if not st.session_state.cam_active:
+    if st.button("🚀 Open Camera Scanner", type="secondary"):
+        st.session_state.cam_active = True
+        st.rerun()
+else:
+    camera_photo = st.camera_input("Position document and capture")
+    if st.button("❌ Close Camera"):
+        st.session_state.cam_active = False
+        st.rerun()
+
+st.subheader("📁 Upload Files")
+uploaded_files = st.file_uploader("Drop images or PDFs here", type=["jpg", "jpeg", "png", "pdf", "tiff", "webp"], accept_multiple_files=True)
 
 current_settings = {
     "crop_tolerance": crop_tol, "remove_hands": remove_hands_setting, "enhance_contrast": enhance_text_setting,
@@ -209,79 +213,68 @@ current_settings = {
 }
 
 final_image_list = []
-if camera_photo: final_image_list.append(("camera_shot.jpg", Image.open(camera_photo)))
+if 'camera_photo' in locals() and camera_photo: final_image_list.append(("camera_shot.jpg", Image.open(camera_photo)))
 if uploaded_files:
     for f in uploaded_files:
         if not f.name.lower().endswith(".pdf"):
             try: final_image_list.append((f.name, Image.open(f)))
             except Exception: st.error(f"Error: {f.name}")
         else:
-            # Handle PDF uploads (extraction)
-            doc = fitz.open(stream=f.read(), filetype="pdf")
-            for i in range(min(len(doc), max_pages_to_process)):
-                pix = doc[i].get_pixmap(dpi=output_dpi)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                final_image_list.append((f"{f.name}_P{i+1}.jpg", img))
-            doc.close()
+            try:
+                doc = fitz.open(stream=f.read(), filetype="pdf")
+                for i in range(min(len(doc), max_pages_to_process)):
+                    pix = doc[i].get_pixmap(dpi=output_dpi)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    final_image_list.append((f"{f.name}_P{i+1}.jpg", img))
+                doc.close()
+            except Exception: st.error(f"PDF Error: {f.name}")
 
 if final_image_list:
-    if st.button("🚀 Process Documents", type="primary"):
+    if st.button("✨ Process All Documents", type="primary"):
         all_text = []
-        master_zip_buf = io.BytesIO()
-        
-        with ThreadPoolExecutor() as executor:
-            # Process everything
-            def task(item):
-                name, image = item
-                img_bgr = pil_to_bgr(image)
-                scan_res = process_single_image_cached(img_bgr, current_settings)
-                if table_detection_setting: scanned_bgr, table = scan_res
-                else: scanned_bgr, table = scan_res, None
-                
-                scanned_pil = bgr_to_pil(scanned_bgr)
-                qr = detect_qr(scanned_bgr)
-                text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
-                
-                doc_type, suggested_name = analyze_document_context(text)
-                pii_found = redact_sensitive_data(scanned_bgr, text, None) if pii_redaction_setting else []
-                
-                return (name, image, scanned_pil, text, qr, table, doc_type, suggested_name, pii_found)
+        def task(item):
+            name, image = item
+            img_bgr = pil_to_bgr(image)
+            scan_res = process_single_image_cached(img_bgr, current_settings)
+            if table_detection_setting: scanned_bgr, table = scan_res
+            else: scanned_bgr, table = scan_res, None
+            
+            scanned_pil = bgr_to_pil(scanned_bgr)
+            qr = detect_qr(scanned_bgr)
+            text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
+            doc_type, sname = analyze_document_context(text)
+            pii = redact_sensitive_data(text) if pii_redaction_setting else []
+            return (name, image, scanned_pil, text, qr, table, doc_type, sname, pii)
 
+        with ThreadPoolExecutor() as executor:
             results = list(executor.map(task, final_image_list))
 
-            # Display Results
-            for name, original, cleaned, text, qr, table, dtype, sname, pii in results:
-                st.markdown(f"### {name}")
-                
-                # Header Badges
-                badge_html = f"<span class='badge badge-blue'>{dtype}</span>"
-                if qr: badge_html += f"<span class='badge'>🔍 QR Found</span>"
-                if table is not None and np.any(table): badge_html += f"<span class='badge'>📊 Table Found</span>"
-                if pii: badge_html += f"<span class='badge badge-red'>⚠️ PII Found: {', '.join(pii)}</span>"
-                st.markdown(badge_html, unsafe_allow_html=True)
+        for name, original, cleaned, text, qr, table, dtype, sname, pii in results:
+            st.markdown(f"### {name}")
+            badges = f"<span class='badge badge-blue'>{dtype}</span>"
+            if qr: badges += f"<span class='badge'>🔍 QR Found</span>"
+            if table is not None and np.any(table): badges += f"<span class='badge'>📊 Table Found</span>"
+            if pii: badges += f"<span class='badge badge-red'>⚠️ PII Found: {', '.join(pii)}</span>"
+            st.markdown(badges, unsafe_allow_html=True)
 
-                col1, col2 = st.columns(2)
-                col1.image(original, caption="Original")
-                col2.image(cleaned, caption="Cleaned")
+            col1, col2 = st.columns(2)
+            col1.image(original, caption="Original", use_container_width=True)
+            col2.image(cleaned, caption="Cleaned", use_container_width=True)
 
-                if smart_naming_setting:
-                    st.caption(f"Suggested Name: **{sname}.pdf**")
+            if smart_naming_setting: st.caption(f"Suggested: **{sname}.pdf**")
 
-                dl_cols = st.columns(3)
-                buf_png = io.BytesIO(); cleaned.save(buf_png, format="PNG")
-                dl_cols[0].download_button("⬇️ PNG", buf_png.getvalue(), f"{sname}.png", "image/png", key=f"png_{name}")
-                
-                buf_pdf = io.BytesIO(); cleaned.save(buf_pdf, format="PDF", resolution=output_dpi)
-                dl_cols[1].download_button("⬇️ PDF", buf_pdf.getvalue(), f"{sname}.pdf", "application/pdf", key=f"pdf_{name}")
-                
-                if text: all_text.append(f"--- {name} ({dtype}) ---\n{text}")
+            dl_cols = st.columns(3)
+            buf_p = io.BytesIO(); cleaned.save(buf_p, format="PNG")
+            dl_cols[0].download_button("⬇️ PNG", buf_p.getvalue(), f"{sname}.png", "image/png", key=f"p_{name}")
+            buf_d = io.BytesIO(); cleaned.save(buf_d, format="PDF", resolution=output_dpi)
+            dl_cols[1].download_button("⬇️ PDF", buf_d.getvalue(), f"{sname}.pdf", "application/pdf", key=f"d_{name}")
+            if text: all_text.append(f"--- {name} ({dtype}) ---\n{text}")
 
-            if all_text:
-                with st.expander("📝 Extracted Data & Text"):
-                    full_text = "\n\n".join(all_text)
-                    st.text_area("Text", full_text, height=300)
-                    st.download_button("📝 Download Text", full_text, "scanned_data.txt")
+        if all_text:
+            with st.expander("📝 Extracted Text"):
+                st.text_area("Results", "\n\n".join(all_text), height=300)
+                st.download_button("📝 Download TXT", "\n\n".join(all_text), "scanned_data.txt")
 
 st.markdown("***")
-st.markdown("<div style='text-align: center;'><span class='badge'>🛡️ Privacy Verified: 100% Offline Processing</span> <span class='badge'>🌍 Multi-Lang: Active</span></div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center;'><span class='badge'>🛡️ Privacy Verified: 100% Offline Processing</span></div>", unsafe_allow_html=True)
 st.caption(f"Engine: {tess_path if 'tess_path' in locals() else 'System'}")
