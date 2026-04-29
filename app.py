@@ -21,26 +21,34 @@ from src.smart_scanner import smart_scan_document
 try:
     import pytesseract
     import shutil
+    import os
     
-    # Check for binary
+    # 1. Try to find it in the system PATH
     tess_path = shutil.which("tesseract")
     
+    # 2. If not in PATH, check the absolute Linux location (Streamlit Cloud)
+    if not tess_path and os.name == 'posix':
+        linux_path = "/usr/bin/tesseract"
+        if os.path.exists(linux_path):
+            tess_path = linux_path
+            
+    # 3. Check common Windows path
+    if not tess_path and os.name == 'nt':
+        windows_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if os.path.exists(windows_path):
+            tess_path = windows_path
+
     if tess_path:
         pytesseract.pytesseract.tesseract_cmd = tess_path
         TESSERACT_AVAILABLE = True
     else:
-        # Check common Windows path
-        windows_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        if os.path.exists(windows_path):
-            pytesseract.pytesseract.tesseract_cmd = windows_path
+        # Final safety check for Streamlit Cloud
+        if os.path.exists("/usr/bin/tesseract"):
+            pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
             TESSERACT_AVAILABLE = True
         else:
-            # On Streamlit Cloud (Linux), sometimes shutil.which fails during boot
-            # but 'tesseract' is still globally available.
-            if os.name == 'posix': 
-                TESSERACT_AVAILABLE = True
-            else:
-                TESSERACT_AVAILABLE = False
+            TESSERACT_AVAILABLE = False
+
 except ImportError:
     TESSERACT_AVAILABLE = False
 
