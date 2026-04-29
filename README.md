@@ -1,4 +1,4 @@
-# 📄 Privacy-First Smart Document Scanner Pro
+# 📄 Privacy First Smart Document Scanner Pro
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-streamlit-app-url.streamlit.app)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
