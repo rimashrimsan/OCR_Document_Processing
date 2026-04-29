@@ -219,6 +219,12 @@ if uploaded_files:
                 doc.close()
             except Exception: st.error(f"PDF Error: {f.name}")
 
+if "processed_data" not in st.session_state:
+    st.session_state.processed_data = None
+    st.session_state.all_text = []
+    st.session_state.qr_results = []
+    st.session_state.table_results = []
+
 if final_image_list:
     if st.button("✨ Process All Documents", type="primary"):
         all_text = []
@@ -256,60 +262,61 @@ if final_image_list:
             gc.collect()
 
         status_text.text("✅ Processing Complete!")
+        
+        st.session_state.processed_data = processed_results
+        st.session_state.all_text = all_text
+        st.session_state.qr_results = qr_results
+        st.session_state.table_results = table_results
 
-        for name, original, cleaned, text, qr, table, dtype, sname, pii in processed_results:
-            st.markdown(f"### {name}")
-            badges = f"<span class='badge badge-blue'>{dtype}</span>"
-            if qr: badges += f"<span class='badge'>🔍 QR Found</span>"
-            if table is not None and np.any(table): badges += f"<span class='badge'>📊 Table Found</span>"
-            if pii: badges += f"<span class='badge badge-red'>⚠️ PII Found: {', '.join(pii)}</span>"
-            st.markdown(badges, unsafe_allow_html=True)
+if st.session_state.processed_data:
+    for name, original, cleaned, text, qr, table, dtype, sname, pii in st.session_state.processed_data:
+        st.markdown(f"### {name}")
+        badges = f"<span class='badge badge-blue'>{dtype}</span>"
+        if qr: badges += f"<span class='badge'>🔍 QR Found</span>"
+        if table is not None and np.any(table): badges += f"<span class='badge'>📊 Table Found</span>"
+        if pii: badges += f"<span class='badge badge-red'>⚠️ PII Found: {', '.join(pii)}</span>"
+        st.markdown(badges, unsafe_allow_html=True)
 
-            col1, col2 = st.columns(2)
-            col1.image(original, caption="Original")
-            col2.image(cleaned, caption="Cleaned")
+        col1, col2 = st.columns(2)
+        col1.image(original, caption="Original")
+        col2.image(cleaned, caption="Cleaned")
 
-            if smart_naming_setting: st.caption(f"Suggested: **{sname}.pdf**")
+        if smart_naming_setting: st.caption(f"Suggested: **{sname}.pdf**")
+        if text: st.session_state.all_text.append(f"--- {name} ({dtype}) ---\n{text}")
 
-            dl_cols = st.columns(3)
-            buf_p = io.BytesIO(); cleaned.save(buf_p, format="PNG")
-            dl_cols[0].download_button("⬇️ PNG", buf_p.getvalue(), f"{sname}.png", "image/png", key=f"png_{name}")
-            buf_d = io.BytesIO(); cleaned.save(buf_d, format="PDF", resolution=output_dpi)
-            dl_cols[1].download_button("⬇️ PDF", buf_d.getvalue(), f"{sname}.pdf", "application/pdf", key=f"pdf_{name}")
-            if text: all_text.append(f"--- {name} ({dtype}) ---\n{text}")
+    st.divider()
+    st.markdown("**📥 Downloads**")
+    
+    dl_cols = st.columns(2)
+    
+    # Complete PDF Download
+    with dl_cols[0]:
+        c_pdf = fitz.open()
+        for _, _, cleaned, _, _, _, _, _, _ in st.session_state.processed_data:
+            buf = io.BytesIO()
+            cleaned.save(buf, format="PDF", resolution=output_dpi)
+            temp = fitz.open("pdf", buf.getvalue())
+            c_pdf.insert_pdf(temp)
+            temp.close()
+        st.download_button("📄 Download Complete PDF", c_pdf.write(deflate=True), "combined_scan.pdf", "application/pdf", use_container_width=True)
 
-        if total > 1:
-            st.divider()
-            st.markdown("**Batch Downloads**")
-            b_cols = st.columns(2)
-            with b_cols[0]:
-                z_buf = io.BytesIO()
-                with zipfile.ZipFile(z_buf, "w") as zf:
-                    for name, _, cleaned, _, _, _, _, sname, _ in processed_results:
-                        img_buf = io.BytesIO()
-                        cleaned.save(img_buf, format="PNG")
-                        zf.writestr(f"{sname}.png", img_buf.getvalue())
-                st.download_button("📦 All Images (ZIP)", z_buf.getvalue(), "scans.zip", "application/zip")
-            with b_cols[1]:
-                c_pdf = fitz.open()
-                for _, _, cleaned, _, _, _, _, _, _ in processed_results:
-                    buf = io.BytesIO()
-                    cleaned.save(buf, format="PDF", resolution=output_dpi)
-                    temp = fitz.open("pdf", buf.getvalue())
-                    c_pdf.insert_pdf(temp)
-                    temp.close()
-                st.download_button("📄 All as Single PDF", c_pdf.write(deflate=True), "combined_scan.pdf", "application/pdf")
+    # All Text Download
+    with dl_cols[1]:
+        if st.session_state.all_text:
+            full_text = "\n\n".join(st.session_state.all_text)
+            st.download_button("📝 Download All Text (TXT)", full_text, "extracted_text.txt", "text/plain", use_container_width=True)
+        else:
+            st.button("📝 No Text Extracted", disabled=True, use_container_width=True)
 
-        if qr_results or table_results:
-            with st.expander("🔍 Findings Log"):
-                for r in qr_results: st.write(f"✅ QR: {r}")
-                for t in table_results: st.write(f"📊 Table: {t}")
+    if st.session_state.qr_results or st.session_state.table_results:
+        with st.expander("🔍 Findings Log"):
+            for r in st.session_state.qr_results: st.write(f"✅ QR: {r}")
+            for t in st.session_state.table_results: st.write(f"📊 Table: {t}")
 
-        if all_text:
-            with st.expander("📝 All Extracted Text"):
-                full = "\n\n".join(all_text)
-                st.text_area("Results", full, height=300)
-                st.download_button("📝 Download TXT", full, "data.txt")
+    if st.session_state.all_text:
+        with st.expander("📝 View Extracted Text"):
+            full = "\n\n".join(st.session_state.all_text)
+            st.text_area("Results", full, height=300)
 
 st.markdown("***")
 st.markdown("<div style='text-align: center;'><span class='badge'>🛡️ Privacy Verified: 100% Offline Processing</span></div>", unsafe_allow_html=True)
