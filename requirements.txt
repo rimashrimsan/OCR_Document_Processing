@@ -1,0 +1,7 @@
+streamlit
+opencv-python-headless
+scikit-learn
+numpy
+Pillow
+PyMuPDF
+pytesseract
