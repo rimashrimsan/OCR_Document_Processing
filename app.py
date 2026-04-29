@@ -289,240 +289,245 @@ if uploaded_files:
         except Exception:
             st.error(f"Could not open image: {img_file.name}")
 
-    all_extracted_text = []
+# START SCANNING BUTTON
+# This prevents the app from rerunning every time you move a slider
+if (uploaded_files or camera_photo):
+    if st.button("🚀 Start Scanning / Apply Settings", type="primary", use_container_width=True):
+        all_extracted_text = []
 
-    # ──────────────────────────────────────
-    # PROCESS PDFs
-    # ──────────────────────────────────────
-    for pdf_file in pdf_files:
-        st.subheader(f"📑 {pdf_file.name}")
-        try:
-            pdf_bytes = pdf_file.read()
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        except Exception:
-            st.error(f"Could not open {pdf_file.name}. The file may be corrupted or password protected.")
-            continue
+        # ──────────────────────────────────────
+        # PROCESS PDFs
+        # ──────────────────────────────────────
+        if 'pdf_files' in locals():
+            for pdf_file in pdf_files:
+                st.subheader(f"📑 {pdf_file.name}")
+                try:
+                    pdf_bytes = pdf_file.read()
+                    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                except Exception:
+                    st.error(f"Could not open {pdf_file.name}. The file may be corrupted or password protected.")
+                    continue
 
-        total_pages = len(doc)
-        pages_to_process = min(total_pages, max_pages_to_process)
-        
-        if total_pages > max_pages_to_process:
-            st.warning(f"File has {total_pages} pages. Processing only the first {max_pages_to_process} to prevent memory crash.")
-
-        # Choose output method
-        if searchable_pdf_enabled and TESSERACT_AVAILABLE:
-            searchable_pdf_parts = []
-        else:
-            output_pdf = fitz.open()
-
-        progress = st.progress(0, text="Starting...")
-
-        # Show preview columns (up to 6 pages)
-        num_preview = min(pages_to_process, 6)
-        preview_cols = st.columns(num_preview) if num_preview > 0 else []
-        pdf_text_parts = []
-
-        for i in range(pages_to_process):
-            try:
-                page = doc.load_page(i)
-                pix = page.get_pixmap(dpi=output_dpi)
-
-                mode = "RGBA" if pix.alpha else "RGB"
-                img_pil = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
-                if mode == "RGBA":
-                    img_pil = img_pil.convert("RGB")
-
-                img_bgr = pil_to_bgr(img_pil)
-                scanned_bgr = process_single_image(img_bgr)
-                scanned_pil = bgr_to_pil(scanned_bgr)
-
-                # Preview
-                if i < num_preview:
-                    with preview_cols[i]:
-                        st.image(scanned_pil, caption=f"Page {i+1}", use_container_width=True)
-
-                # OCR text extraction
-                if ocr_enabled:
-                    page_text = run_ocr(scanned_pil)
-                    pdf_text_parts.append(f"--- Page {i+1} ---\n{page_text}")
-
-                # Build output PDF
-                if searchable_pdf_enabled and TESSERACT_AVAILABLE:
-                    pdf_page_bytes = make_searchable_pdf_page(scanned_pil)
-                    if pdf_page_bytes:
-                        searchable_pdf_parts.append(pdf_page_bytes)
-                else:
-                    buf = io.BytesIO()
-                    scanned_pil.save(buf, format="PDF", resolution=output_dpi)
-                    temp_pdf = fitz.open("pdf", buf.getvalue())
-                    output_pdf.insert_pdf(temp_pdf)
-                    temp_pdf.close()
+                total_pages = len(doc)
+                pages_to_process = min(total_pages, max_pages_to_process)
                 
-                # Explicit memory cleanup per page
-                del img_bgr, scanned_bgr, scanned_pil
-                gc.collect()
+                if total_pages > max_pages_to_process:
+                    st.warning(f"File has {total_pages} pages. Processing only the first {max_pages_to_process} to prevent memory crash.")
 
-            except Exception as e:
-                st.error(f"Error on page {i+1}: {str(e)}")
+                # Choose output method
+                if searchable_pdf_enabled and TESSERACT_AVAILABLE:
+                    searchable_pdf_parts = []
+                else:
+                    output_pdf = fitz.open()
 
-            progress.progress((i+1) / pages_to_process, text=f"Processed page {i+1} of {pages_to_process}")
+                progress = st.progress(0, text="Starting...")
 
-        # Finalize PDF
-        if searchable_pdf_enabled and TESSERACT_AVAILABLE and searchable_pdf_parts:
-            # Merge searchable PDF pages
-            merged_pdf = fitz.open()
-            for part in searchable_pdf_parts:
-                temp = fitz.open("pdf", part)
-                merged_pdf.insert_pdf(temp)
-                temp.close()
-            final_pdf_bytes = merged_pdf.write(deflate=True, garbage=3)
-            merged_pdf.close()
-        else:
-            final_pdf_bytes = output_pdf.write(deflate=True, garbage=3)
-            output_pdf.close()
+                # Show preview columns (up to 6 pages)
+                num_preview = min(pages_to_process, 6)
+                preview_cols = st.columns(num_preview) if num_preview > 0 else []
+                pdf_text_parts = []
 
-        doc.close()
-        st.success(f"Finished processing {pages_to_process} pages.")
+                for i in range(pages_to_process):
+                    try:
+                        page = doc.load_page(i)
+                        pix = page.get_pixmap(dpi=output_dpi)
 
-        # Download buttons row
-        dl_cols = st.columns(3)
-        with dl_cols[0]:
-            label = "⬇️ Download Searchable PDF" if (searchable_pdf_enabled and TESSERACT_AVAILABLE) else "⬇️ Download Cleaned PDF"
-            st.download_button(
-                label=label,
-                data=final_pdf_bytes,
-                file_name=f"{final_prefix}{os.path.splitext(pdf_file.name)[0]}.pdf",
-                mime="application/pdf",
-                key=f"pdf_dl_{pdf_file.name}"
-            )
+                        mode = "RGBA" if pix.alpha else "RGB"
+                        img_pil = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                        if mode == "RGBA":
+                            img_pil = img_pil.convert("RGB")
 
-        if ocr_enabled and pdf_text_parts:
-            full_text = "\n\n".join(pdf_text_parts)
-            all_extracted_text.append(full_text)
-            with dl_cols[1]:
-                st.download_button(
-                    label="📝 Download as Text",
-                    data=full_text,
-                    file_name=f"{os.path.splitext(pdf_file.name)[0]}.txt",
-                    mime="text/plain",
-                    key=f"txt_dl_{pdf_file.name}"
-                )
+                        img_bgr = pil_to_bgr(img_pil)
+                        scanned_bgr = process_single_image(img_bgr)
+                        scanned_pil = bgr_to_pil(scanned_bgr)
 
-        st.divider()
+                        # Preview
+                        if i < num_preview:
+                            with preview_cols[i]:
+                                st.image(scanned_pil, caption=f"Page {i+1}", use_container_width=True)
 
-# ──────────────────────────────────────────
-# PROCESS IMAGES (Including Camera)
-# ──────────────────────────────────────────
-if final_image_list:
-    st.subheader(f"🖼️ Processing {len(final_image_list)} Image(s)")
-    cleaned_images = []
-    all_extracted_text_images = []
+                        # OCR text extraction
+                        if ocr_enabled:
+                            page_text = run_ocr(scanned_pil)
+                            pdf_text_parts.append(f"--- Page {i+1} ---\n{page_text}")
 
-    for name, image in final_image_list:
-        try:
-            img_bgr = pil_to_bgr(image)
-            scanned_bgr = process_single_image(img_bgr)
-            scanned_pil = bgr_to_pil(scanned_bgr)
-            cleaned_images.append((name, image, scanned_pil))
+                        # Build output PDF
+                        if searchable_pdf_enabled and TESSERACT_AVAILABLE:
+                            pdf_page_bytes = make_searchable_pdf_page(scanned_pil)
+                            if pdf_page_bytes:
+                                searchable_pdf_parts.append(pdf_page_bytes)
+                        else:
+                            buf = io.BytesIO()
+                            scanned_pil.save(buf, format="PDF", resolution=output_dpi)
+                            temp_pdf = fitz.open("pdf", buf.getvalue())
+                            output_pdf.insert_pdf(temp_pdf)
+                            temp_pdf.close()
+                        
+                        # Explicit memory cleanup per page
+                        del img_bgr, scanned_bgr, scanned_pil
+                        gc.collect()
 
-            if ocr_enabled:
-                page_text = run_ocr(scanned_pil)
-                all_extracted_text_images.append(f"--- {name} ---\n{page_text}")
-            
-            # Memory cleanup
-            del img_bgr, scanned_bgr
-            gc.collect()
-        except Exception:
-            st.error(f"Could not process {name}")
+                    except Exception as e:
+                        st.error(f"Error on page {i+1}: {str(e)}")
 
-    # Before/After display
-    for name, original, cleaned in cleaned_images:
-        st.markdown(f"**{name}**")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(original, caption="Original", use_container_width=True)
-        with col2:
-            st.image(cleaned, caption="Cleaned", use_container_width=True)
+                    progress.progress((i+1) / pages_to_process, text=f"Processed page {i+1} of {pages_to_process}")
 
-        # Per image downloads
-        dl_cols = st.columns(3)
-        with dl_cols[0]:
-            buf = io.BytesIO()
-            cleaned.save(buf, format="PNG")
-            st.download_button(
-                label=f"⬇️ Download PNG",
-                data=buf.getvalue(),
-                file_name=f"{final_prefix}{name}",
-                mime="image/png",
-                key=f"img_png_{name}"
-            )
-        with dl_cols[1]:
-            buf_pdf = io.BytesIO()
-            cleaned.save(buf_pdf, format="PDF", resolution=output_dpi)
-            st.download_button(
-                label=f"⬇️ Download as PDF",
-                data=buf_pdf.getvalue(),
-                file_name=f"{final_prefix}{os.path.splitext(name)[0]}.pdf",
-                mime="application/pdf",
-                key=f"img_pdf_{name}"
-            )
+                # Finalize PDF
+                if searchable_pdf_enabled and TESSERACT_AVAILABLE and searchable_pdf_parts:
+                    # Merge searchable PDF pages
+                    merged_pdf = fitz.open()
+                    for part in searchable_pdf_parts:
+                        temp = fitz.open("pdf", part)
+                        merged_pdf.insert_pdf(temp)
+                        temp.close()
+                    final_pdf_bytes = merged_pdf.write(deflate=True, garbage=3)
+                    merged_pdf.close()
+                else:
+                    final_pdf_bytes = output_pdf.write(deflate=True, garbage=3)
+                    output_pdf.close()
 
-    # Batch ZIP download
-    if len(cleaned_images) > 1:
-        st.markdown("**Batch Download**")
-        zip_cols = st.columns(2)
+                doc.close()
+                st.success(f"Finished processing {pages_to_process} pages.")
 
-        # ZIP of PNGs
-        with zip_cols[0]:
-            zip_buf = io.BytesIO()
-            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for name, _, cleaned in cleaned_images:
-                    img_buf = io.BytesIO()
-                    cleaned.save(img_buf, format="PNG")
-                    zf.writestr(f"cleaned_{name}", img_buf.getvalue())
-            st.download_button(
-                label="📦 Download All Images (ZIP)",
-                data=zip_buf.getvalue(),
-                file_name="cleaned_images.zip",
-                mime="application/zip",
-                key="zip_png_dl"
-            )
+                # Download buttons row
+                dl_cols = st.columns(3)
+                with dl_cols[0]:
+                    label = "⬇️ Download Searchable PDF" if (searchable_pdf_enabled and TESSERACT_AVAILABLE) else "⬇️ Download Cleaned PDF"
+                    st.download_button(
+                        label=label,
+                        data=final_pdf_bytes,
+                        file_name=f"{final_prefix}{os.path.splitext(pdf_file.name)[0]}.pdf",
+                        mime="application/pdf",
+                        key=f"pdf_dl_{pdf_file.name}"
+                    )
 
-        # Combined PDF of all images
-        with zip_cols[1]:
-            combined_pdf = fitz.open()
-            for name, _, cleaned in cleaned_images:
-                buf = io.BytesIO()
-                cleaned.save(buf, format="PDF", resolution=output_dpi)
-                temp = fitz.open("pdf", buf.getvalue())
-                combined_pdf.insert_pdf(temp)
-                temp.close()
-            combined_bytes = combined_pdf.write(deflate=True, garbage=3)
-            combined_pdf.close()
-            st.download_button(
-                label="📄 Download All as Single PDF",
-                data=combined_bytes,
-                file_name=f"{final_prefix}batch_all.pdf",
-                mime="application/pdf",
-                key="combined_pdf_dl"
-            )
+                if ocr_enabled and pdf_text_parts:
+                    full_text = "\n\n".join(pdf_text_parts)
+                    all_extracted_text.append(full_text)
+                    with dl_cols[1]:
+                        st.download_button(
+                            label="📝 Download as Text",
+                            data=full_text,
+                            file_name=f"{os.path.splitext(pdf_file.name)[0]}.txt",
+                            mime="text/plain",
+                            key=f"txt_dl_{pdf_file.name}"
+                        )
 
-    st.divider()
+                st.divider()
 
-    # ──────────────────────────────────────
-    # COMBINED OCR OUTPUT
-    # ──────────────────────────────────────
-    if ocr_enabled and (all_extracted_text or all_extracted_text_images):
-        with st.expander("📝 View All Extracted Text", expanded=False):
-            combined_text = "\n\n".join(all_extracted_text + all_extracted_text_images)
-            st.text_area("Extracted Text", combined_text, height=400)
-            st.download_button(
-                label="📝 Download Complete Text File",
-                data=combined_text,
-                file_name="extracted_text.txt",
-                mime="text/plain",
-                key="all_txt_dl"
-            )
+        # ──────────────────────────────────────────
+        # PROCESS IMAGES (Including Camera)
+        # ──────────────────────────────────────────
+        if final_image_list:
+            st.subheader(f"🖼️ Processing {len(final_image_list)} Image(s)")
+            cleaned_images = []
+            all_extracted_text_images = []
+
+            for name, image in final_image_list:
+                try:
+                    img_bgr = pil_to_bgr(image)
+                    scanned_bgr = process_single_image(img_bgr)
+                    scanned_pil = bgr_to_pil(scanned_bgr)
+                    cleaned_images.append((name, image, scanned_pil))
+
+                    if ocr_enabled:
+                        page_text = run_ocr(scanned_pil)
+                        all_extracted_text_images.append(f"--- {name} ---\n{page_text}")
+                    
+                    # Memory cleanup
+                    del img_bgr, scanned_bgr
+                    gc.collect()
+                except Exception:
+                    st.error(f"Could not process {name}")
+
+            # Before/After display
+            for name, original, cleaned in cleaned_images:
+                st.markdown(f"**{name}**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.image(original, caption="Original", use_container_width=True)
+                with col2:
+                    st.image(cleaned, caption="Cleaned", use_container_width=True)
+
+                # Per image downloads
+                dl_cols = st.columns(3)
+                with dl_cols[0]:
+                    buf = io.BytesIO()
+                    cleaned.save(buf, format="PNG")
+                    st.download_button(
+                        label=f"⬇️ Download PNG",
+                        data=buf.getvalue(),
+                        file_name=f"{final_prefix}{name}",
+                        mime="image/png",
+                        key=f"img_png_{name}"
+                    )
+                with dl_cols[1]:
+                    buf_pdf = io.BytesIO()
+                    cleaned.save(buf_pdf, format="PDF", resolution=output_dpi)
+                    st.download_button(
+                        label=f"⬇️ Download as PDF",
+                        data=buf_pdf.getvalue(),
+                        file_name=f"{final_prefix}{os.path.splitext(name)[0]}.pdf",
+                        mime="application/pdf",
+                        key=f"img_pdf_{name}"
+                    )
+
+            # Batch ZIP download
+            if len(cleaned_images) > 1:
+                st.markdown("**Batch Download**")
+                zip_cols = st.columns(2)
+
+                # ZIP of PNGs
+                with zip_cols[0]:
+                    zip_buf = io.BytesIO()
+                    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for name, _, cleaned in cleaned_images:
+                            img_buf = io.BytesIO()
+                            cleaned.save(img_buf, format="PNG")
+                            zf.writestr(f"cleaned_{name}", img_buf.getvalue())
+                    st.download_button(
+                        label="📦 Download All Images (ZIP)",
+                        data=zip_buf.getvalue(),
+                        file_name="cleaned_images.zip",
+                        mime="application/zip",
+                        key="zip_png_dl"
+                    )
+
+                # Combined PDF of all images
+                with zip_cols[1]:
+                    combined_pdf = fitz.open()
+                    for name, _, cleaned in cleaned_images:
+                        buf = io.BytesIO()
+                        cleaned.save(buf, format="PDF", resolution=output_dpi)
+                        temp = fitz.open("pdf", buf.getvalue())
+                        combined_pdf.insert_pdf(temp)
+                        temp.close()
+                    combined_bytes = combined_pdf.write(deflate=True, garbage=3)
+                    combined_pdf.close()
+                    st.download_button(
+                        label="📄 Download All as Single PDF",
+                        data=combined_bytes,
+                        file_name=f"{final_prefix}batch_all.pdf",
+                        mime="application/pdf",
+                        key="combined_pdf_dl"
+                    )
+
+            st.divider()
+
+            # ──────────────────────────────────────
+            # COMBINED OCR OUTPUT
+            # ──────────────────────────────────────
+            if ocr_enabled and (all_extracted_text or all_extracted_text_images):
+                with st.expander("📝 View All Extracted Text", expanded=False):
+                    combined_text = "\n\n".join(all_extracted_text + all_extracted_text_images)
+                    st.text_area("Extracted Text", combined_text, height=400)
+                    st.download_button(
+                        label="📝 Download Complete Text File",
+                        data=combined_text,
+                        file_name="extracted_text.txt",
+                        mime="text/plain",
+                        key="all_txt_dl"
+                    )
 
 # ──────────────────────────────────────────
 # FOOTER
