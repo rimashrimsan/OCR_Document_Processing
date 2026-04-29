@@ -221,13 +221,14 @@ if uploaded_files:
 
 if "processed_data" not in st.session_state:
     st.session_state.processed_data = None
-    st.session_state.all_text = []
+    st.session_state.final_pdf_bytes = None
+    st.session_state.final_text_str = None
     st.session_state.qr_results = []
     st.session_state.table_results = []
 
 if final_image_list:
     if st.button("✨ Process All Documents", type="primary"):
-        all_text = []
+        all_text_list = []
         qr_results = []
         table_results = []
         processed_results = []
@@ -235,6 +236,8 @@ if final_image_list:
         total = len(final_image_list)
         progress_bar = st.progress(0)
         status_text = st.empty()
+        
+        c_pdf = fitz.open() # Create a single PDF document
         
         for i, (name, image) in enumerate(final_image_list):
             status_text.text(f"Processing ({i+1}/{total}): {name}...")
@@ -257,16 +260,31 @@ if final_image_list:
             pii = detect_pii(text) if pii_redaction_setting else []
             
             processed_results.append((name, image, scanned_pil, text, qr, table, dtype, sname, pii))
+            
+            if text:
+                all_text_list.append(f"--- {name} ({dtype}) ---\n{text}")
+                
+            # Add to the combined PDF
+            buf = io.BytesIO()
+            scanned_pil.save(buf, format="PDF", resolution=output_dpi)
+            temp = fitz.open("pdf", buf.getvalue())
+            c_pdf.insert_pdf(temp)
+            temp.close()
+            
             progress_bar.progress((i + 1) / total)
             del img_bgr, scanned_bgr
             gc.collect()
 
         status_text.text("✅ Processing Complete!")
         
+        # Save finalized strings and bytes to session state so they don't rebuild on rerun
         st.session_state.processed_data = processed_results
-        st.session_state.all_text = all_text
+        st.session_state.final_pdf_bytes = c_pdf.write(deflate=True)
+        st.session_state.final_text_str = "\n\n".join(all_text_list) if all_text_list else None
         st.session_state.qr_results = qr_results
         st.session_state.table_results = table_results
+        
+        c_pdf.close()
 
 if st.session_state.processed_data:
     for name, original, cleaned, text, qr, table, dtype, sname, pii in st.session_state.processed_data:
@@ -282,7 +300,6 @@ if st.session_state.processed_data:
         col2.image(cleaned, caption="Cleaned")
 
         if smart_naming_setting: st.caption(f"Suggested: **{sname}.pdf**")
-        if text: st.session_state.all_text.append(f"--- {name} ({dtype}) ---\n{text}")
 
     st.divider()
     st.markdown("**📥 Downloads**")
@@ -291,20 +308,13 @@ if st.session_state.processed_data:
     
     # Complete PDF Download
     with dl_cols[0]:
-        c_pdf = fitz.open()
-        for _, _, cleaned, _, _, _, _, _, _ in st.session_state.processed_data:
-            buf = io.BytesIO()
-            cleaned.save(buf, format="PDF", resolution=output_dpi)
-            temp = fitz.open("pdf", buf.getvalue())
-            c_pdf.insert_pdf(temp)
-            temp.close()
-        st.download_button("📄 Download Complete PDF", c_pdf.write(deflate=True), "combined_scan.pdf", "application/pdf", use_container_width=True)
+        if st.session_state.final_pdf_bytes:
+            st.download_button("📄 Download Complete PDF", st.session_state.final_pdf_bytes, "combined_scan.pdf", "application/pdf", use_container_width=True)
 
     # All Text Download
     with dl_cols[1]:
-        if st.session_state.all_text:
-            full_text = "\n\n".join(st.session_state.all_text)
-            st.download_button("📝 Download All Text (TXT)", full_text, "extracted_text.txt", "text/plain", use_container_width=True)
+        if st.session_state.final_text_str:
+            st.download_button("📝 Download All Text (TXT)", st.session_state.final_text_str, "extracted_text.txt", "text/plain", use_container_width=True)
         else:
             st.button("📝 No Text Extracted", disabled=True, use_container_width=True)
 
@@ -313,10 +323,9 @@ if st.session_state.processed_data:
             for r in st.session_state.qr_results: st.write(f"✅ QR: {r}")
             for t in st.session_state.table_results: st.write(f"📊 Table: {t}")
 
-    if st.session_state.all_text:
+    if st.session_state.final_text_str:
         with st.expander("📝 View Extracted Text"):
-            full = "\n\n".join(st.session_state.all_text)
-            st.text_area("Results", full, height=300)
+            st.text_area("Results", st.session_state.final_text_str, height=300)
 
 st.markdown("***")
 st.markdown("<div style='text-align: center;'><span class='badge'>🛡️ Privacy Verified: 100% Offline Processing</span></div>", unsafe_allow_html=True)
