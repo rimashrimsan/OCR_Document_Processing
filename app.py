@@ -90,10 +90,26 @@ if TESSERACT_AVAILABLE:
         "Extract Text (Tesseract OCR)", value=False,
         help="Runs offline OCR on each page to extract readable text. No internet required."
     )
-    ocr_lang = st.sidebar.text_input(
-        "OCR Language Code", value="eng",
-        help="Examples: eng, deu, fra, sin, ara. Combine with + like eng+deu."
-    )
+    
+    # User friendly language selection
+    lang_map = {
+        "English": "eng",
+        "Sinhalese": "sin",
+        "Tamil": "tam",
+        "Hindi": "hin",
+        "German": "deu",
+        "French": "fra",
+        "Spanish": "spa",
+        "Arabic": "ara",
+        "Custom Code": "custom"
+    }
+    selected_lang_name = st.sidebar.selectbox("OCR Language", options=list(lang_map.keys()), index=0)
+    
+    if selected_lang_name == "Custom Code":
+        ocr_lang = st.sidebar.text_input("Enter Language Code(s)", value="eng", help="Use codes like 'eng+sin'")
+    else:
+        ocr_lang = lang_map[selected_lang_name]
+
     searchable_pdf_enabled = st.sidebar.checkbox(
         "Generate Searchable PDF", value=False,
         help="Creates a PDF with an invisible text layer so you can search and copy text from the document."
@@ -106,7 +122,13 @@ else:
 st.sidebar.markdown("***")
 
 # Output and Safety
-st.sidebar.markdown("**Memory and Output**")
+st.sidebar.markdown("**File Naming & Quality**")
+file_prefix = st.sidebar.text_input("File Prefix", value="Scan", help="Prefix for your saved files.")
+import datetime
+current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+add_date = st.sidebar.checkbox("Add Date to Filename", value=True)
+final_prefix = f"{file_prefix}_{current_date}_" if add_date else f"{file_prefix}_"
+
 output_dpi = st.sidebar.select_slider(
     "Output Quality (DPI)", options=[72, 100, 150, 200, 300], value=150,
     help="Higher DPI = better quality but larger file size. 150 is good for reading, 300 for printing."
@@ -312,10 +334,10 @@ if uploaded_files:
                 temp = fitz.open("pdf", part)
                 merged_pdf.insert_pdf(temp)
                 temp.close()
-            final_pdf_bytes = merged_pdf.write()
+            final_pdf_bytes = merged_pdf.write(deflate=True, garbage=3)
             merged_pdf.close()
         else:
-            final_pdf_bytes = output_pdf.write()
+            final_pdf_bytes = output_pdf.write(deflate=True, garbage=3)
             output_pdf.close()
 
         doc.close()
@@ -328,7 +350,7 @@ if uploaded_files:
             st.download_button(
                 label=label,
                 data=final_pdf_bytes,
-                file_name=f"cleaned_{pdf_file.name}",
+                file_name=f"{final_prefix}{os.path.splitext(pdf_file.name)[0]}.pdf",
                 mime="application/pdf",
                 key=f"pdf_dl_{pdf_file.name}"
             )
@@ -389,7 +411,7 @@ if final_image_list:
             st.download_button(
                 label=f"⬇️ Download PNG",
                 data=buf.getvalue(),
-                file_name=f"cleaned_{name}",
+                file_name=f"{final_prefix}{name}",
                 mime="image/png",
                 key=f"img_png_{name}"
             )
@@ -399,7 +421,7 @@ if final_image_list:
             st.download_button(
                 label=f"⬇️ Download as PDF",
                 data=buf_pdf.getvalue(),
-                file_name=f"{os.path.splitext(name)[0]}.pdf",
+                file_name=f"{final_prefix}{os.path.splitext(name)[0]}.pdf",
                 mime="application/pdf",
                 key=f"img_pdf_{name}"
             )
@@ -434,12 +456,12 @@ if final_image_list:
                 temp = fitz.open("pdf", buf.getvalue())
                 combined_pdf.insert_pdf(temp)
                 temp.close()
-            combined_bytes = combined_pdf.write()
+            combined_bytes = combined_pdf.write(deflate=True, garbage=3)
             combined_pdf.close()
             st.download_button(
                 label="📄 Download All as Single PDF",
                 data=combined_bytes,
-                file_name="cleaned_all_pages.pdf",
+                file_name=f"{final_prefix}batch_all.pdf",
                 mime="application/pdf",
                 key="combined_pdf_dl"
             )
