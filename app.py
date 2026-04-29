@@ -25,200 +25,93 @@ from src.smart_scanner import smart_scan_document
 TESSERACT_AVAILABLE = False
 try:
     import pytesseract
-    
-    # Aggressive search for Tesseract binary
     def find_tesseract():
-        # 1. Check system path
         path = shutil.which("tesseract")
         if path: return path
-        
-        # 2. Check absolute Linux paths (Streamlit Cloud)
         for p in ["/usr/bin/tesseract", "/usr/local/bin/tesseract"]:
             if os.path.exists(p): return p
-            
-        # 3. Check absolute Windows paths
-        for p in [
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-            r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))
-        ]:
+        for p in [r"C:\Program Files\Tesseract-OCR\tesseract.exe", r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))]:
             if os.path.exists(p): return p
         return None
-
     tess_path = find_tesseract()
     if tess_path:
         pytesseract.pytesseract.tesseract_cmd = tess_path
         TESSERACT_AVAILABLE = True
     elif os.name == 'posix':
-        # Final fallback for Linux: just use the command name and hope for the best
         TESSERACT_AVAILABLE = True
         pytesseract.pytesseract.tesseract_cmd = "tesseract"
-        
 except ImportError:
     TESSERACT_AVAILABLE = False
 
-st.set_page_config(
-    page_title="Smart Document Scanner",
-    page_icon="📄",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ──────────────────────────────────────────
+# CONFIGURATION & CSS
+# ──────────────────────────────────────────
+st.set_page_config(page_title="Smart Document Scanner", page_icon="📄", layout="wide", initial_sidebar_state="expanded")
+
+st.markdown("""
+<style>
+    .stButton > button { width: 100%; border-radius: 12px; height: 3em; background-color: #007BFF; color: white; font-weight: bold; transition: all 0.3s ease; }
+    .stButton > button:hover { background-color: #0056b3; transform: scale(1.01); }
+    @media (max-width: 640px) { .stImage > img { width: 100% !important; } .main .block-container { padding-top: 1rem; } }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+QR_DETECTOR = cv2.QRCodeDetector()
 
 # ──────────────────────────────────────────
 # SIDEBAR
 # ──────────────────────────────────────────
 st.sidebar.title("⚙️ Scanner Settings")
-
 st.sidebar.markdown("**Page Detection**")
-deskew_setting = st.sidebar.checkbox(
-    "Perspective Flattening", value=True,
-    help="Detects the 4 corners of the page and flattens any tilt or angle into a perfect rectangle."
-)
-crop_tol = st.sidebar.slider(
-    "Crop Tolerance", min_value=10, max_value=100, value=50,
-    help="Controls how aggressively the algorithm removes background around the page."
-)
-auto_rotate_setting = st.sidebar.checkbox(
-    "Auto Rotate Text", value=True,
-    help="Detects the angle of text lines and rotates the page so text is perfectly horizontal."
-)
-border_cleanup_setting = st.sidebar.checkbox(
-    "Remove Edge Borders", value=True,
-    help="Trims dark borders that appear after perspective correction or from scanner glass edges."
-)
+deskew_setting = st.sidebar.checkbox("Perspective Flattening", value=True)
+crop_tol = st.sidebar.slider("Crop Tolerance", 10, 100, 50)
+auto_rotate_setting = st.sidebar.checkbox("Auto Rotate Text", value=True)
+border_cleanup_setting = st.sidebar.checkbox("Remove Edge Borders", value=True)
 
 st.sidebar.markdown("**Cleanup**")
-remove_hands_setting = st.sidebar.checkbox(
-    "Remove Hands (AI Powered)", value=True,
-    help="Uses MediaPipe AI to detect hand landmarks for all skin tones and erases them seamlessly."
-)
+remove_hands_setting = st.sidebar.checkbox("Remove Hands (AI Powered)", value=True)
 
 st.sidebar.markdown("**Lighting and Quality**")
-white_balance_setting = st.sidebar.checkbox(
-    "Auto White Balance", value=True,
-    help="Corrects color casts from yellow lamps or blue screens using the Gray World algorithm."
-)
-shadows_setting = st.sidebar.checkbox(
-    "Remove Shadows and Bleed Through", value=True,
-    help="Computes the background light field and subtracts phone shadows or text bleeding through from the back page."
-)
-enhance_text_setting = st.sidebar.checkbox(
-    "Enhance Text Contrast", value=True,
-    help="Uses Adaptive Histogram Equalization to boost the difference between text and paper."
-)
-denoise_setting = st.sidebar.checkbox(
-    "Denoise Old Documents", value=False,
-    help="Removes speckle noise from aged, photocopied, or damaged pages using Non Local Means filtering."
-)
-sharpen_setting = st.sidebar.checkbox(
-    "Sharpen Text", value=False,
-    help="Applies an unsharp mask to make text edges crisper."
-)
-bw_setting = st.sidebar.checkbox(
-    "Black and White Mode", value=False,
-    help="Converts to a clean monochrome scan using adaptive thresholding. Ideal for printing or faxing."
-)
+white_balance_setting = st.sidebar.checkbox("Auto White Balance", value=True)
+shadows_setting = st.sidebar.checkbox("Remove Shadows", value=True)
+enhance_text_setting = st.sidebar.checkbox("Enhance Contrast", value=True)
+denoise_setting = st.sidebar.checkbox("Denoise", value=False)
+sharpen_setting = st.sidebar.checkbox("Sharpen", value=False)
+bw_setting = st.sidebar.checkbox("Black and White Mode", value=False)
 
 st.sidebar.markdown("***")
-
-# OCR Section
 st.sidebar.markdown("**Text Extraction (OCR)**")
 if TESSERACT_AVAILABLE:
-    ocr_enabled = st.sidebar.checkbox(
-        "Extract Text (Tesseract OCR)", value=False,
-        help="Runs offline OCR on each page to extract readable text. No internet required."
-    )
-    
-    # User friendly language selection
-    lang_map = {
-        "English": "eng",
-        "Sinhalese": "sin",
-        "Tamil": "tam",
-        "Hindi": "hin",
-        "German": "deu",
-        "French": "fra",
-        "Spanish": "spa",
-        "Arabic": "ara",
-        "Custom Code": "custom"
-    }
-    selected_lang_name = st.sidebar.selectbox("OCR Language", options=list(lang_map.keys()), index=0)
-    
-    if selected_lang_name == "Custom Code":
-        ocr_lang = st.sidebar.text_input("Enter Language Code(s)", value="eng", help="Use codes like 'eng+sin'")
-    else:
-        ocr_lang = lang_map[selected_lang_name]
-
-    searchable_pdf_enabled = st.sidebar.checkbox(
-        "Generate Searchable PDF", value=False,
-        help="Creates a PDF with an invisible text layer so you can search and copy text from the document."
-    )
+    ocr_enabled = st.sidebar.checkbox("Extract Text (OCR)", value=False)
+    lang_map = {"English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "German": "deu", "French": "fra", "Spanish": "spa", "Custom": "custom"}
+    selected_lang_name = st.sidebar.selectbox("Language", list(lang_map.keys()))
+    ocr_lang = st.sidebar.text_input("Code", "eng") if selected_lang_name == "Custom" else lang_map[selected_lang_name]
+    searchable_pdf_enabled = st.sidebar.checkbox("Searchable PDF", value=False)
 else:
-    ocr_enabled = False
-    searchable_pdf_enabled = False
-    st.sidebar.warning("⚠️ OCR Engine not found. Please reboot the app in the Streamlit Dashboard (Manage App -> Reboot) to install dependencies.")
+    ocr_enabled = searchable_pdf_enabled = False
+    st.sidebar.warning("⚠️ OCR Engine not found. Reboot in Dashboard.")
 
 st.sidebar.markdown("***")
-
-# Output and Safety
-st.sidebar.markdown("**File Naming & Quality**")
-file_prefix = st.sidebar.text_input("File Prefix", value="Scan", help="Prefix for your saved files.")
-current_date = datetime.datetime.now().strftime("%Y-%m-%d")
-add_date = st.sidebar.checkbox("Add Date to Filename", value=True)
-final_prefix = f"{file_prefix}_{current_date}_" if add_date else f"{file_prefix}_"
-
-output_dpi = st.sidebar.select_slider(
-    "Output Quality (DPI)", options=[72, 100, 150, 200, 300], value=150,
-    help="Higher DPI = better quality but larger file size. 150 is good for reading, 300 for printing."
-)
-max_pages_to_process = st.sidebar.slider(
-    "Max Pages (Safety)", min_value=1, max_value=200, value=50,
-    help="Limits the number of pages processed per PDF to prevent memory crashes on the server."
-)
-
-st.sidebar.markdown("***")
-st.sidebar.info("💡 If the algorithm crops too much, lower the Crop Tolerance. If colors look wrong, try toggling Auto White Balance.")
-
-# ──────────────────────────────────────────
-# MAIN PAGE
-# ──────────────────────────────────────────
-st.title("📄 Privacy First Smart Document Scanner")
-st.markdown("""
-**100% Offline. 100% Private. Zero cloud uploads. No watermarks. No subscriptions.**
-
-Most document scanner apps upload your files to remote servers, add watermarks to free versions, 
-and lock advanced features behind paywalls. This tool processes everything locally in your browser.
-Your files are never stored, never logged, and never sent to any external service.
-""")
-
-# Feature highlights
-col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-with col_f1:
-    st.markdown("**🔧 11 Step Pipeline**")
-    st.caption("Perspective, rotation, shadows, hands, contrast, and more")
-with col_f2:
-    st.markdown("**🖐️ AI Hand Removal**")
-    st.caption("Advanced MediaPipe detection for all skin tones")
-with col_f3:
-    st.markdown("**📸 Mobile Camera**")
-    st.caption("Scan directly from your phone's camera in browser")
-with col_f4:
-    st.markdown("**🔒 100% Privacy**")
-    st.caption("Zero data collection or cloud processing")
-
-st.divider()
+file_prefix = st.sidebar.text_input("File Prefix", "Scan")
+add_date = st.sidebar.checkbox("Add Date", value=True)
+final_prefix = f"{file_prefix}_{datetime.datetime.now().strftime('%Y-%m-%d')}_" if add_date else f"{file_prefix}_"
+output_dpi = st.sidebar.select_slider("DPI", [72, 100, 150, 200, 300], 150)
+max_pages_to_process = st.sidebar.slider("Max Pages", 1, 200, 50)
 
 # ──────────────────────────────────────────
 # CACHED FUNCTIONS
 # ──────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def process_single_image_cached(img_bgr, settings_dict):
-    """Run the full scanner pipeline with caching support."""
     return smart_scan_document(img_bgr, **settings_dict)
 
 @st.cache_data(show_spinner=False)
 def run_ocr_cached(pil_img, lang):
     if not TESSERACT_AVAILABLE: return ""
     try: return pytesseract.image_to_string(pil_img, lang=lang)
-    except Exception as e: return f"OCR Error: {str(e)}"
+    except Exception: return "OCR Error"
 
 @st.cache_data(show_spinner=False)
 def make_searchable_pdf_page_cached(pil_img, lang):
@@ -233,85 +126,68 @@ def pil_to_bgr(pil_img):
 def bgr_to_pil(bgr_img):
     return Image.fromarray(cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB))
 
+def detect_qr(img_bgr):
+    try:
+        data, _, _ = QR_DETECTOR.detectAndDecode(img_bgr)
+        return data if data else None
+    except Exception: return None
+
 # ──────────────────────────────────────────
-# INPUTS (CAMERA + UPLOAD)
+# MAIN PAGE
 # ──────────────────────────────────────────
-st.subheader("📷 Scan with Camera")
-show_camera = st.checkbox("Open Camera Scanner", value=False)
+st.title("📄 Privacy First Smart Scanner")
+st.markdown("100% Offline. 100% Private. Zero cloud uploads.")
+
+st.subheader("📷 Camera Scan")
+show_camera = st.checkbox("Open Camera", value=False)
 camera_photo = st.camera_input("Take photo") if show_camera else None
 
-st.subheader("📁 Upload Files")
-uploaded_files = st.file_uploader("Upload Documents", type=["jpg", "jpeg", "png", "pdf", "tiff", "tif", "bmp", "webp"], accept_multiple_files=True)
+st.subheader("📁 Upload")
+uploaded_files = st.file_uploader("Upload images/PDFs", type=["jpg", "jpeg", "png", "pdf", "tiff", "webp"], accept_multiple_files=True)
 
-# Collect Settings for Caching
 current_settings = {
-    "crop_tolerance": crop_tol,
-    "remove_hands": remove_hands_setting,
-    "enhance_contrast": enhance_text_setting,
-    "deskew": deskew_setting,
-    "fix_shadows": shadows_setting,
-    "auto_rotate_enabled": auto_rotate_setting,
-    "denoise_enabled": denoise_setting,
-    "sharpen_enabled": sharpen_setting,
-    "bw_mode": bw_setting,
-    "white_balance_enabled": white_balance_setting,
-    "border_cleanup": border_cleanup_setting,
+    "crop_tolerance": crop_tol, "remove_hands": remove_hands_setting, "enhance_contrast": enhance_text_setting,
+    "deskew": deskew_setting, "fix_shadows": shadows_setting, "auto_rotate_enabled": auto_rotate_setting,
+    "denoise_enabled": denoise_setting, "sharpen_enabled": sharpen_setting, "bw_mode": bw_setting,
+    "white_balance_enabled": white_balance_setting, "border_cleanup": border_cleanup_setting,
 }
 
-# Combine camera and uploaded images
 final_image_list = []
-if camera_photo:
-    final_image_list.append(("camera_shot.jpg", Image.open(camera_photo)))
-
+if camera_photo: final_image_list.append(("camera_shot.jpg", Image.open(camera_photo)))
 if uploaded_files:
     pdf_files = [f for f in uploaded_files if f.name.lower().endswith(".pdf")]
     image_files = [f for f in uploaded_files if not f.name.lower().endswith(".pdf")]
     for img_file in image_files:
         try: final_image_list.append((img_file.name, Image.open(img_file)))
-        except Exception: st.error(f"Could not open image: {img_file.name}")
+        except Exception: st.error(f"Error opening {img_file.name}")
 
-# START SCANNING BUTTON
 if (uploaded_files or camera_photo):
-    if st.button("🚀 Start Scanning / Apply Settings", type="primary", use_container_width=True):
+    if st.button("🚀 Start Scanning / Apply Settings", type="primary"):
         all_extracted_text = []
+        qr_results = []
 
-        # ──────────────────────────────────────
-        # PROCESS PDFs
-        # ──────────────────────────────────────
-        if 'pdf_files' in locals():
+        if 'pdf_files' in locals() and pdf_files:
             for pdf_file in pdf_files:
                 st.subheader(f"📑 {pdf_file.name}")
                 try:
-                    pdf_bytes = pdf_file.read()
-                    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                except Exception:
-                    st.error(f"Could not open {pdf_file.name}")
-                    continue
-
-                total_pages = len(doc)
-                pages_to_process = min(total_pages, max_pages_to_process)
-                
-                searchable_pdf_parts = [] if (searchable_pdf_enabled and TESSERACT_AVAILABLE) else None
-                output_pdf = fitz.open() if not searchable_pdf_parts else None
-
-                progress = st.progress(0, text="Starting...")
-                num_preview = min(pages_to_process, 6)
-                preview_cols = st.columns(num_preview) if num_preview > 0 else []
-                pdf_text_parts = []
-
-                for i in range(pages_to_process):
-                    try:
-                        page = doc.load_page(i)
-                        pix = page.get_pixmap(dpi=output_dpi)
+                    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+                    pages_to_process = min(len(doc), max_pages_to_process)
+                    searchable_pdf_parts = [] if (searchable_pdf_enabled and TESSERACT_AVAILABLE) else None
+                    output_pdf = fitz.open() if not searchable_pdf_parts else None
+                    
+                    progress = st.progress(0)
+                    pdf_text_parts = []
+                    
+                    for i in range(pages_to_process):
+                        pix = doc[i].get_pixmap(dpi=output_dpi)
                         img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-                        # FAST PIPELINE: Caching + CV
                         img_bgr = pil_to_bgr(img_pil)
                         scanned_bgr = process_single_image_cached(img_bgr, current_settings)
                         scanned_pil = bgr_to_pil(scanned_bgr)
-
-                        if i < num_preview:
-                            with preview_cols[i]: st.image(scanned_pil, caption=f"Page {i+1}", use_container_width=True)
+                        
+                        # QR Detection
+                        qr_data = detect_qr(scanned_bgr)
+                        if qr_data: qr_results.append(f"Page {i+1} QR: {qr_data}")
 
                         if ocr_enabled:
                             text = run_ocr_cached(scanned_pil, ocr_lang)
@@ -327,118 +203,66 @@ if (uploaded_files or camera_photo):
                             output_pdf.insert_pdf(temp_pdf)
                             temp_pdf.close()
                         
-                        gc.collect()
-                    except Exception as e:
-                        st.error(f"Error on page {i+1}: {str(e)}")
+                        progress.progress((i+1)/pages_to_process)
+                    
+                    if searchable_pdf_parts:
+                        merged = fitz.open()
+                        for p in searchable_pdf_parts: 
+                            t = fitz.open("pdf", p)
+                            merged.insert_pdf(t)
+                            t.close()
+                        final_bytes = merged.write(deflate=True, garbage=3)
+                        merged.close()
+                    else:
+                        final_bytes = output_pdf.write(deflate=True, garbage=3)
+                        output_pdf.close()
+                    
+                    st.download_button("⬇️ Download PDF", final_bytes, f"{final_prefix}{pdf_file.name}", "application/pdf")
+                    if ocr_enabled: all_extracted_text.append("\n\n".join(pdf_text_parts))
+                    doc.close()
+                except Exception as e: st.error(f"Error: {str(e)}")
 
-                    progress.progress((i+1) / pages_to_process, text=f"Processed page {i+1} of {pages_to_process}")
-
-                # Finalize PDF
-                if searchable_pdf_parts:
-                    merged_pdf = fitz.open()
-                    for part in searchable_pdf_parts:
-                        temp = fitz.open("pdf", part)
-                        merged_pdf.insert_pdf(temp)
-                        temp.close()
-                    final_pdf_bytes = merged_pdf.write(deflate=True, garbage=3)
-                    merged_pdf.close()
-                else:
-                    final_pdf_bytes = output_pdf.write(deflate=True, garbage=3)
-                    output_pdf.close()
-
-                doc.close()
-                st.success(f"Finished processing {pages_to_process} pages.")
-
-                dl_cols = st.columns(3)
-                with dl_cols[0]:
-                    st.download_button(
-                        label="⬇️ Download PDF", data=final_pdf_bytes,
-                        file_name=f"{final_prefix}{os.path.splitext(pdf_file.name)[0]}.pdf",
-                        mime="application/pdf", key=f"pdf_dl_{pdf_file.name}"
-                    )
-                if ocr_enabled and pdf_text_parts:
-                    full_text = "\n\n".join(pdf_text_parts)
-                    all_extracted_text.append(full_text)
-                    with dl_cols[1]:
-                        st.download_button(
-                            label="📝 Download Text", data=full_text,
-                            file_name=f"{os.path.splitext(pdf_file.name)[0]}.txt",
-                            mime="text/plain", key=f"txt_dl_{pdf_file.name}"
-                        )
-                st.divider()
-
-        # ──────────────────────────────────────────
-        # PROCESS IMAGES (Parallelized)
-        # ──────────────────────────────────────────
         if final_image_list:
-            st.subheader(f"🖼️ Processing {len(final_image_list)} Image(s)")
-            cleaned_images = []
-            all_extracted_text_images = []
-
-            # We use ThreadPoolExecutor to speed up multi-image processing
-            def process_image_task(item):
+            st.subheader(f"🖼️ Images")
+            def process_task(item):
                 name, image = item
                 img_bgr = pil_to_bgr(image)
                 scanned_bgr = process_single_image_cached(img_bgr, current_settings)
                 scanned_pil = bgr_to_pil(scanned_bgr)
-                
-                text = ""
-                if ocr_enabled:
-                    text = run_ocr_cached(scanned_pil, ocr_lang)
-                return (name, image, scanned_pil, text)
+                qr = detect_qr(scanned_bgr)
+                text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
+                return (name, original, scanned_pil, text, qr)
 
-            with ThreadPoolExecutor() as executor:
-                results = list(executor.map(process_image_task, final_image_list))
+            results = []
+            for item in final_image_list:
+                name, image = item
+                img_bgr = pil_to_bgr(image)
+                scanned_bgr = process_single_image_cached(img_bgr, current_settings)
+                scanned_pil = bgr_to_pil(scanned_bgr)
+                qr = detect_qr(scanned_bgr)
+                text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
+                results.append((name, image, scanned_pil, text, qr))
 
-            for name, original, cleaned, text in results:
-                cleaned_images.append((name, original, cleaned))
-                if text: all_extracted_text_images.append(f"--- {name} ---\n{text}")
-                
+            for name, original, cleaned, text, qr in results:
                 st.markdown(f"**{name}**")
+                if qr: st.success(f"🔍 Found QR Code: {qr}")
                 col1, col2 = st.columns(2)
-                with col1: st.image(original, caption="Original", use_container_width=True)
-                with col2: st.image(cleaned, caption="Cleaned", use_container_width=True)
+                col1.image(original, caption="Original")
+                col2.image(cleaned, caption="Cleaned")
+                buf = io.BytesIO()
+                cleaned.save(buf, format="PNG")
+                st.download_button(f"⬇️ Download {name}", buf.getvalue(), f"cleaned_{name}", "image/png")
+                if text: all_extracted_text.append(f"--- {name} ---\n{text}")
 
-                dl_cols = st.columns(3)
-                with dl_cols[0]:
-                    buf = io.BytesIO()
-                    cleaned.save(buf, format="PNG")
-                    st.download_button(label="⬇️ PNG", data=buf.getvalue(), file_name=f"{final_prefix}{name}", mime="image/png", key=f"img_png_{name}")
-                with dl_cols[1]:
-                    buf_pdf = io.BytesIO()
-                    cleaned.save(buf_pdf, format="PDF", resolution=output_dpi)
-                    st.download_button(label="⬇️ PDF", data=buf_pdf.getvalue(), file_name=f"{final_prefix}{os.path.splitext(name)[0]}.pdf", mime="application/pdf", key=f"img_pdf_{name}")
+        if qr_results:
+            with st.expander("🔍 Found QR/Barcodes"):
+                for r in qr_results: st.write(r)
 
-            # Batch ZIP
-            if len(cleaned_images) > 1:
-                st.markdown("**Batch Download**")
-                zip_cols = st.columns(2)
-                with zip_cols[0]:
-                    zip_buf = io.BytesIO()
-                    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                        for name, _, cleaned in cleaned_images:
-                            img_buf = io.BytesIO()
-                            cleaned.save(img_buf, format="PNG")
-                            zf.writestr(f"cleaned_{name}", img_buf.getvalue())
-                    st.download_button(label="📦 Images (ZIP)", data=zip_buf.getvalue(), file_name="images.zip", mime="application/zip")
-                with zip_cols[1]:
-                    combined_pdf = fitz.open()
-                    for name, _, cleaned in cleaned_images:
-                        buf = io.BytesIO()
-                        cleaned.save(buf, format="PDF", resolution=output_dpi)
-                        temp = fitz.open("pdf", buf.getvalue())
-                        combined_pdf.insert_pdf(temp)
-                        temp.close()
-                    combined_bytes = combined_pdf.write(deflate=True, garbage=3)
-                    combined_pdf.close()
-                    st.download_button(label="📄 Single PDF", data=combined_bytes, file_name=f"{final_prefix}all.pdf", mime="application/pdf")
-
-            if ocr_enabled and (all_extracted_text or all_extracted_text_images):
-                with st.expander("📝 View All Extracted Text"):
-                    combined_text = "\n\n".join(all_extracted_text + all_extracted_text_images)
-                    st.text_area("Text", combined_text, height=400)
-                    st.download_button(label="📝 Download Text", data=combined_text, file_name="text.txt", mime="text/plain")
+        if all_extracted_text:
+            with st.expander("📝 Extracted Text"):
+                full = "\n\n".join(all_extracted_text)
+                st.text_area("Text", full, height=300)
+                st.download_button("📝 Download Text", full, "scanned_text.txt")
 
 st.markdown("***")
-st.caption("Built with OpenCV, NumPy, MediaPipe AI, PyMuPDF, and Tesseract OCR. No data leaves your browser.")
-st.caption(f"Engine Info: {tess_path if 'tess_path' in locals() else 'System Path'}")
+st.caption(f"Engine: {tess_path if 'tess_path' in locals() else 'System'}")

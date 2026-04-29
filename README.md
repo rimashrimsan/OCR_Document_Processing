@@ -1,105 +1,80 @@
-# Privacy First Smart Document Scanner
+# 📄 Privacy-First Smart Document Scanner
 
-A powerful, fully offline document scanning and OCR tool built with computer vision.
-No cloud APIs, no data collection, no watermarks, no subscriptions.
-Your files never leave your device.
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-streamlit-app-url.streamlit.app)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-## Live Demo
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/)
+**100% Offline. 100% Private. Zero Cloud Uploads. Professional Grade.**
 
-Try it now: https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/
+Most document scanner apps (like CamScanner or Adobe Scan) harvest your data, require subscriptions, and upload your sensitive documents to remote servers for processing. This tool is built on a different philosophy: **Your data never leaves your device.**
 
-## Features
+Built with **OpenCV**, **MediaPipe AI**, **PyMuPDF**, and **Tesseract OCR**, this is a professional-grade scanner that runs entirely in your browser.
 
-### Page Detection and Geometry
-Detects the page boundaries using K Means color clustering.
-Flattens perspective using a 4 point homography transform.
-Auto rotates skewed text using Hough Line analysis.
-Removes dark borders left after perspective correction.
+---
 
-### Intelligent Cleanup
-Detects skin tones (hands, fingers, thumbs) for all skin types using **MediaPipe AI Landmarks**.
-Erases detected hands using the Telea Fast Marching inpainting algorithm.
-Removes phone shadows and back page bleed through by estimating the background illumination field.
-**Mobile Camera Support**: Scan documents directly from your phone's browser using built-in camera integration.
+## ✨ Key Features
 
-### Color and Lighting
-Auto white balance correction using the Gray World algorithm to fix color casts from artificial lighting.
-Adaptive contrast enhancement using CLAHE (Contrast Limited Adaptive Histogram Equalization).
+### 🛠️ 11-Step Computer Vision Pipeline
+- **Perspective Flattening**: Automatically detects page corners and fixes tilts/angles.
+- **AI Hand Removal**: Uses MediaPipe to detect fingers and erases them from the paper.
+- **Shadow Subtraction**: Computes the background light field to remove phone shadows.
+- **Auto White Balance**: Fixes yellow/blue color casts from indoor lighting.
+- **Adaptive Contrast**: Boosts text readability on aged or damaged paper.
 
-### Text Enhancement
-Non Local Means denoising for old or damaged documents.
-Unsharp mask sharpening for crisp text edges.
-Black and white adaptive thresholding mode for print ready output.
+### 📝 Professional OCR & Output
+- **Searchable PDFs**: Generates PDFs with invisible text layers for searching/copying.
+- **Multilingual Support**: Supports English, Sinhalese, Tamil, Hindi, German, and more.
+- **QR/Barcode Detection**: Automatically extracts data from codes found on documents.
+- **High Compression**: Uses Deflate and Garbage Collection to keep file sizes small.
 
-### Offline OCR (No Internet Required)
-Extracts text from cleaned documents using Tesseract OCR.
-Supports 100+ languages with zero cloud dependencies.
-Generates searchable PDFs with invisible text layers.
-Download extracted text as plain text files.
+### 📱 Mobile Optimized
+- **Installable PWA Feel**: Optimized CSS for full-screen use on iOS and Android.
+- **In-Browser Camera**: Use your phone's camera directly without any app store download.
 
-### Batch Processing and Export
-Upload multiple files at once (PDFs and images mixed).
-Download cleaned images individually as PNG or PDF.
-Download all cleaned images as a single ZIP archive.
-Combine all images into a single multi page PDF.
-Adjustable output quality from 72 to 300 DPI.
-Full PDF processing with per page preview gallery.
+---
 
-### What Makes This Different
+## 🔒 The Privacy Manifesto
 
-| Feature | CamScanner | Adobe Scan | This Tool |
-|---|---|---|---|
-| No watermarks | Paid | Free | Free |
-| Perspective flattening | Paid | Paid | Free |
-| Hand and finger removal | No | No | **Yes (AI Powered)** |
-| Shadow removal | Paid | Paid | Free |
-| Bleed through removal | No | No | Free |
-| Auto white balance | No | Paid | Free |
-| Auto text rotation | Paid | Free | Free |
-| Denoising old documents | No | No | Free |
-| Text sharpening | No | No | Free |
-| Black and white mode | Paid | Free | Free |
-| Offline OCR | No (cloud) | No (cloud) | Free |
-| Searchable PDF | Paid | Paid | Free |
-| Batch multi file upload | Paid | Paid | Free |
-| Mobile Camera Input | Yes | Yes | **Yes (Direct)** |
-| ZIP download | No | No | Free |
-| Combined PDF export | No | Paid | Free |
-| DPI quality control | No | No | Free |
-| Privacy guarantee | No | No | Yes |
-| Upload limit | 10MB | 25MB | 1GB |
+1. **Zero Bytes Uploaded**: All image processing happens in the server's ephemeral memory or your browser. No files are stored.
+2. **No Tracking**: No Google Analytics, no cookies, no user accounts.
+3. **Open Source**: The code is public so you can verify our privacy claims.
+4. **Local OCR**: Uses a local Tesseract binary instead of cloud-based OCR APIs.
 
-## Code Structure
-```
-src/
-  smart_scanner.py   # 11 step computer vision pipeline
-  pdf_tools.py       # PDF page manipulation utilities
-  vision_ocr.py      # Legacy research module, not used in the app
-app.py               # Streamlit web interface
-packages.txt         # System dependencies for Streamlit Cloud (Tesseract)
-requirements.txt     # Python dependencies
-.streamlit/
-  config.toml        # Dark theme and upload limit configuration
-```
+---
 
-## Run Locally
+## 🚀 Installation & Local Run
+
+If you want to run this on your own machine:
+
+### 1. Install System Dependencies
+- **Tesseract OCR**: [Installation Guide](https://tesseract-ocr.github.io/tessdoc/Installation.html)
+- **Poppler/LibGL**: (Required for PDF and OpenCV support)
+
+### 2. Clone and Install Python Packages
 ```bash
+git clone https://github.com/rimashrimsan/OCR_Document_Processing.git
+cd OCR_Document_Processing
 pip install -r requirements.txt
+```
+
+### 3. Run the App
+```bash
 streamlit run app.py
 ```
 
-For OCR features, also install Tesseract:
-```bash
-# Ubuntu/Debian
-sudo apt install tesseract-ocr
+---
 
-# macOS
-brew install tesseract
+## 🗺️ Roadmap
+- [x] AI Hand Removal
+- [x] Searchable PDF Support
+- [x] QR/Barcode Extraction
+- [ ] **Table-to-Excel Export** (Coming Soon)
+- [ ] **Digital Signatures** (Coming Soon)
+- [ ] **Batch Redaction** (Coming Soon)
 
-# Windows
-# Download from https://github.com/UB-Mannheim/tesseract/wiki
-```
+---
 
-## Technology
-OpenCV, NumPy, scikit learn, PyMuPDF, Tesseract OCR, Streamlit
+## ⚖️ License & Credits
+Distributed under the **GNU GPL v3 License**. 
+Copyright (c) 2024 **rimashrimsan**.
+
+Built with ❤️ for a more private internet.
