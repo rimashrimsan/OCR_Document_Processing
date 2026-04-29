@@ -12,19 +12,16 @@ import datetime
 import shutil
 import re
 
-# Add current directory to path for local imports
+# Add current directory to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-# Smart Import for logic (handles both root and src/ folder structures)
+# Import from root directly
 try:
-    from src.smart_scanner import smart_scan_document
+    from smart_scanner import smart_scan_document
 except ImportError:
-    try:
-        from smart_scanner import smart_scan_document
-    except ImportError:
-        st.error("⚠️ Critical Error: Scanning logic (smart_scanner.py) not found in src/ or root.")
+    from src.smart_scanner import smart_scan_document
 
 # ──────────────────────────────────────────
 # TESSERACT INITIALIZATION
@@ -165,12 +162,6 @@ def run_ocr_cached(pil_img, lang):
     try: return pytesseract.image_to_string(pil_img, lang=lang)
     except Exception: return ""
 
-@st.cache_data(show_spinner=False)
-def make_searchable_pdf_page_cached(pil_img, lang):
-    if not TESSERACT_AVAILABLE: return None
-    try: return pytesseract.image_to_pdf_or_hocr(np.array(pil_img), extension='pdf', lang=lang)
-    except Exception: return None
-
 def pil_to_bgr(pil_img):
     if pil_img.mode != "RGB": pil_img = pil_img.convert("RGB")
     return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
@@ -207,8 +198,7 @@ uploaded_files = st.file_uploader("Images or PDFs", type=["jpg", "jpeg", "png", 
 current_settings = {
     "crop_tolerance": crop_tol, "remove_hands": remove_hands_setting, "enhance_contrast": enhance_text_setting,
     "deskew": deskew_setting, "fix_shadows": shadows_setting, "auto_rotate_enabled": auto_rotate_setting,
-    "denoise_enabled": False, "sharpen_enabled": False, "bw_mode": bw_setting,
-    "white_balance_enabled": white_balance_setting, "border_cleanup": border_cleanup_setting,
+    "bw_mode": bw_setting, "white_balance_enabled": white_balance_setting, "border_cleanup": border_cleanup_setting,
     "detect_tables": table_detection_setting,
 }
 

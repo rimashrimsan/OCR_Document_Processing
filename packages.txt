@@ -9,5 +9,5 @@ tesseract-ocr-fra
 tesseract-ocr-deu
 tesseract-ocr-rus
 tesseract-ocr-spa
-libgl1-mesa-glx
+libgl1
 libglib2.0-0
