@@ -131,10 +131,7 @@ st.sidebar.markdown("**Language**")
 if TESSERACT_AVAILABLE:
     lang_options = {
         "English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "Arabic": "ara", 
-        "Bengali": "ben", "Chinese (Simp)": "chi_sim", "Chinese (Trad)": "chi_tra",
-        "French": "fra", "German": "deu", "Italian": "ita", "Japanese": "jpn", 
-        "Korean": "kor", "Portuguese": "por", "Russian": "rus", "Spanish": "spa",
-        "Thai": "tha", "Turkish": "tur", "Vietnamese": "vie", "Greek": "ell"
+        "Chinese (Simp)": "chi_sim", "French": "fra", "German": "deu", "Russian": "rus", "Spanish": "spa"
     }
     selected_lang = st.sidebar.selectbox("OCR Language", list(lang_options.keys()))
     ocr_lang = lang_options[selected_lang]
@@ -232,7 +229,6 @@ if final_image_list:
         table_results = []
         processed_results = []
         
-        # PROGRESS BAR
         total = len(final_image_list)
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -240,7 +236,6 @@ if final_image_list:
         for i, (name, image) in enumerate(final_image_list):
             status_text.text(f"Processing ({i+1}/{total}): {name}...")
             
-            # 1. Image Cleanup
             img_bgr = pil_to_bgr(image)
             scan_res = process_single_image_cached(img_bgr, current_settings)
             
@@ -250,29 +245,21 @@ if final_image_list:
             else:
                 scanned_bgr, table = scan_res, None
             
-            # 2. Advanced Detection
             qr = detect_qr(scanned_bgr)
             if qr: qr_results.append(f"{name}: {qr}")
             
             scanned_pil = bgr_to_pil(scanned_bgr)
-            
-            # 3. OCR & Context
             text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
             dtype, sname = analyze_document_context(text)
             pii = detect_pii(text) if pii_redaction_setting else []
             
             processed_results.append((name, image, scanned_pil, text, qr, table, dtype, sname, pii))
-            
-            # 4. Update Progress
             progress_bar.progress((i + 1) / total)
-            
-            # 5. Memory Cleanup
             del img_bgr, scanned_bgr
             gc.collect()
 
         status_text.text("✅ Processing Complete!")
 
-        # DISPLAY RESULTS
         for name, original, cleaned, text, qr, table, dtype, sname, pii in processed_results:
             st.markdown(f"### {name}")
             badges = f"<span class='badge badge-blue'>{dtype}</span>"
@@ -294,7 +281,6 @@ if final_image_list:
             dl_cols[1].download_button("⬇️ PDF", buf_d.getvalue(), f"{sname}.pdf", "application/pdf", key=f"pdf_{name}")
             if text: all_text.append(f"--- {name} ({dtype}) ---\n{text}")
 
-        # BATCH DOWNLOADS
         if total > 1:
             st.divider()
             st.markdown("**Batch Downloads**")
