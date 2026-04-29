@@ -124,7 +124,7 @@ auto_rotate_setting = st.sidebar.checkbox("Auto Rotate Text", value=True)
 border_cleanup_setting = st.sidebar.checkbox("Remove Edge Borders", value=True)
 
 st.sidebar.markdown("**Cleanup**")
-remove_hands_setting = st.sidebar.checkbox("Remove Hands (AI)", value=True)
+remove_hands_setting = st.sidebar.checkbox("Remove Hands (Auto)", value=True)
 table_detection_setting = st.sidebar.checkbox("Detect Tables", value=False)
 
 st.sidebar.markdown("**Lighting**")
