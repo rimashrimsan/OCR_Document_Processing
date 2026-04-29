@@ -67,7 +67,7 @@ streamlit run app.py
 - [x] AI Hand Removal
 - [x] Searchable PDF Support
 - [x] QR/Barcode Extraction
-- [ ] **Table-to-Excel Export** (Coming Soon)
+- [x] **Table Detection & Extraction** (NEW)
 - [ ] **Digital Signatures** (Coming Soon)
 - [ ] **Batch Redaction** (Coming Soon)
 

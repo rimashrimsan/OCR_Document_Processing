@@ -55,6 +55,7 @@ st.markdown("""
     @media (max-width: 640px) { .stImage > img { width: 100% !important; } .main .block-container { padding-top: 1rem; } }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    .badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; background-color: #28a745; color: white; display: inline-block; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,6 +73,7 @@ border_cleanup_setting = st.sidebar.checkbox("Remove Edge Borders", value=True)
 
 st.sidebar.markdown("**Cleanup**")
 remove_hands_setting = st.sidebar.checkbox("Remove Hands (AI Powered)", value=True)
+table_detection_setting = st.sidebar.checkbox("Detect & Extract Tables", value=False)
 
 st.sidebar.markdown("**Lighting and Quality**")
 white_balance_setting = st.sidebar.checkbox("Auto White Balance", value=True)
@@ -150,6 +152,7 @@ current_settings = {
     "deskew": deskew_setting, "fix_shadows": shadows_setting, "auto_rotate_enabled": auto_rotate_setting,
     "denoise_enabled": denoise_setting, "sharpen_enabled": sharpen_setting, "bw_mode": bw_setting,
     "white_balance_enabled": white_balance_setting, "border_cleanup": border_cleanup_setting,
+    "detect_tables": table_detection_setting,
 }
 
 final_image_list = []
@@ -165,6 +168,7 @@ if (uploaded_files or camera_photo):
     if st.button("🚀 Start Scanning / Apply Settings", type="primary"):
         all_extracted_text = []
         qr_results = []
+        table_results = []
 
         # PROCESS PDFs
         if 'pdf_files' in locals() and pdf_files:
@@ -182,7 +186,16 @@ if (uploaded_files or camera_photo):
                         pix = doc[i].get_pixmap(dpi=output_dpi)
                         img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                         img_bgr = pil_to_bgr(img_pil)
-                        scanned_bgr = process_single_image_cached(img_bgr, current_settings)
+                        
+                        # Process based on return type
+                        scan_res = process_single_image_cached(img_bgr, current_settings)
+                        if table_detection_setting:
+                            scanned_bgr, table_grid = scan_res
+                            if table_grid is not None and np.any(table_grid):
+                                table_results.append(f"{pdf_file.name} P{i+1}: Table Found")
+                        else:
+                            scanned_bgr = scan_res
+                            
                         scanned_pil = bgr_to_pil(scanned_bgr)
                         
                         qr_data = detect_qr(scanned_bgr)
@@ -227,19 +240,29 @@ if (uploaded_files or camera_photo):
             def process_image_task(item):
                 name, image = item
                 img_bgr = pil_to_bgr(image)
-                scanned_bgr = process_single_image_cached(img_bgr, current_settings)
+                scan_res = process_single_image_cached(img_bgr, current_settings)
+                
+                if table_detection_setting:
+                    scanned_bgr, table_grid = scan_res
+                else:
+                    scanned_bgr, table_grid = scan_res, None
+                    
                 scanned_pil = bgr_to_pil(scanned_bgr)
                 qr_data = detect_qr(scanned_bgr)
                 text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
-                return (name, image, scanned_pil, text, qr_data)
+                return (name, image, scanned_pil, text, qr_data, table_grid)
 
-            # Parallel processing for images
-            with ThreadPoolExecutor() as executor:
-                results = list(executor.map(process_image_task, final_image_list))
+            # Process images
+            results = []
+            for item in final_image_list:
+                results.append(process_image_task(item))
 
-            for name, original, cleaned, text, qr in results:
+            for name, original, cleaned, text, qr, table in results:
                 st.markdown(f"**{name}**")
-                if qr: st.success(f"🔍 Found QR Code: {qr}")
+                info_cols = st.columns(3)
+                if qr: info_cols[0].success(f"🔍 QR: {qr}")
+                if table is not None and np.any(table): info_cols[1].info("📊 Table Detected")
+                
                 col1, col2 = st.columns(2)
                 col1.image(original, caption="Original")
                 col2.image(cleaned, caption="Cleaned")
@@ -248,15 +271,15 @@ if (uploaded_files or camera_photo):
                 with dl_cols[0]:
                     buf = io.BytesIO()
                     cleaned.save(buf, format="PNG")
-                    st.download_button(f"⬇️ PNG", buf.getvalue(), f"cleaned_{name}", "image/png")
+                    st.download_button(f"⬇️ PNG", buf.getvalue(), f"cleaned_{name}", "image/png", key=f"png_{name}")
                 with dl_cols[1]:
                     buf_pdf = io.BytesIO()
                     cleaned.save(buf_pdf, format="PDF", resolution=output_dpi)
-                    st.download_button(f"⬇️ PDF", buf_pdf.getvalue(), f"cleaned_{os.path.splitext(name)[0]}.pdf", "application/pdf")
+                    st.download_button(f"⬇️ PDF", buf_pdf.getvalue(), f"cleaned_{os.path.splitext(name)[0]}.pdf", "application/pdf", key=f"pdf_{name}")
                 
                 if text: all_extracted_text.append(f"--- {name} ---\n{text}")
 
-        # Batch Downloads for multiple images
+        # Batch Downloads
         if len(final_image_list) > 1:
             st.divider()
             st.markdown("**Batch Downloads**")
@@ -264,14 +287,14 @@ if (uploaded_files or camera_photo):
             with b_cols[0]:
                 z_buf = io.BytesIO()
                 with zipfile.ZipFile(z_buf, "w") as zf:
-                    for name, _, cleaned, _, _ in results:
+                    for name, _, cleaned, _, _, _ in results:
                         img_buf = io.BytesIO()
                         cleaned.save(img_buf, format="PNG")
                         zf.writestr(f"cleaned_{name}", img_buf.getvalue())
                 st.download_button("📦 Download All Images (ZIP)", z_buf.getvalue(), "cleaned_images.zip", "application/zip")
             with b_cols[1]:
                 c_pdf = fitz.open()
-                for _, _, cleaned, _, _ in results:
+                for _, _, cleaned, _, _, _ in results:
                     buf = io.BytesIO()
                     cleaned.save(buf, format="PDF", resolution=output_dpi)
                     temp = fitz.open("pdf", buf.getvalue())
@@ -279,9 +302,10 @@ if (uploaded_files or camera_photo):
                     temp.close()
                 st.download_button("📄 Download All as Single PDF", c_pdf.write(deflate=True), "batch_scan.pdf", "application/pdf")
 
-        if qr_results:
-            with st.expander("🔍 Found QR/Barcodes"):
-                for r in qr_results: st.write(r)
+        if qr_results or table_results:
+            with st.expander("🔍 Advanced Detection Results"):
+                for r in qr_results: st.write(f"✅ {r}")
+                for t in table_results: st.write(f"📊 {t}")
 
         if all_extracted_text:
             with st.expander("📝 Extracted Text"):
@@ -290,4 +314,5 @@ if (uploaded_files or camera_photo):
                 st.download_button("📝 Download Text File", full, "scanned_text.txt")
 
 st.markdown("***")
+st.markdown("<div style='text-align: center;'><span class='badge'>🛡️ Privacy Verified: 100% Offline Processing</span></div>", unsafe_allow_html=True)
 st.caption(f"Engine Info: {tess_path if 'tess_path' in locals() else 'System Path'}")

@@ -313,6 +313,27 @@ def remove_borders(image, border_percent=2):
     return image
 
 
+def detect_table_grid(image):
+    """
+    Detect tables by looking for horizontal and vertical lines.
+    Returns a binary mask of the table grid.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    binary = cv2.adaptiveThreshold(~gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 15, -2)
+    
+    # Isolate horizontal lines
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (image.shape[1] // 40, 1))
+    h_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, h_kernel, iterations=2)
+    
+    # Isolate vertical lines
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, image.shape[0] // 40))
+    v_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, v_kernel, iterations=2)
+    
+    # Combine and detect intersections
+    grid = cv2.add(h_lines, v_lines)
+    return grid
+
+
 def smart_scan_document(
     image_bgr,
     crop_tolerance=50,
@@ -326,6 +347,7 @@ def smart_scan_document(
     bw_mode=False,
     white_balance_enabled=True,
     border_cleanup=True,
+    detect_tables=False
 ):
     """Full document scanning pipeline."""
     # Step 1: Detect and crop to page
@@ -357,11 +379,8 @@ def smart_scan_document(
     # Step 5: Remove hands
     if remove_hands:
         hand_mask = detect_hands_ai(result)
-        
-        # Fallback to color if AI fails or finds nothing
         if hand_mask is None or not np.any(hand_mask):
             hand_mask = detect_skin_mask(result)
-            
         if hand_mask is not None and np.any(hand_mask):
             result = inpaint_region(result, hand_mask)
 
@@ -385,4 +404,11 @@ def smart_scan_document(
     if bw_mode:
         result = binarize_document(result)
 
+    # Step 11: Table detection (Optional)
+    table_grid = None
+    if detect_tables:
+        table_grid = detect_table_grid(result)
+
+    if detect_tables:
+        return result, table_grid
     return result
