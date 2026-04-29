@@ -2,6 +2,34 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
+# Global variables for AI detection (initialized lazily)
+_MEDIAPIPE_HANDS = None
+_HANDS_DETECTOR = None
+_MEDIAPIPE_FAILED = False
+
+def get_hands_detector():
+    """Lazily initialize MediaPipe to avoid startup crashes."""
+    global _MEDIAPIPE_HANDS, _HANDS_DETECTOR, _MEDIAPIPE_FAILED
+    
+    if _MEDIAPIPE_FAILED:
+        return None
+    
+    if _HANDS_DETECTOR is not None:
+        return _HANDS_DETECTOR
+        
+    try:
+        import mediapipe as mp
+        _MEDIAPIPE_HANDS = mp.solutions.hands
+        _HANDS_DETECTOR = _MEDIAPIPE_HANDS.Hands(
+            static_image_mode=True,
+            max_num_hands=4,
+            min_detection_confidence=0.5
+        )
+        return _HANDS_DETECTOR
+    except Exception:
+        _MEDIAPIPE_FAILED = True
+        return None
+
 
 def get_dominant_page_color(image):
     """
@@ -106,8 +134,46 @@ def four_point_transform(image, pts):
     return cv2.warpPerspective(image, M, (maxWidth, maxHeight))
 
 
+def detect_hands_ai(image):
+    """
+    Detect hands using MediaPipe AI landmarks.
+    Works for all skin tones and is much more accurate than color filtering.
+    """
+    detector = get_hands_detector()
+    if detector is None:
+        return None
+
+    # MediaPipe uses RGB
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    try:
+        results = detector.process(image_rgb)
+    except Exception:
+        return None
+    
+    h, w = image.shape[:2]
+    mask = np.zeros((h, w), dtype=np.uint8)
+    
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            # Get points for the hand
+            points = []
+            for lm in hand_landmarks.landmark:
+                points.append([int(lm.x * w), int(lm.y * h)])
+            
+            # Create a hull or polygon around the points
+            points = np.array(points)
+            hull = cv2.convexHull(points)
+            cv2.drawContours(mask, [hull], -1, 255, -1)
+            
+            # Dilate slightly to cover the whole hand/fingers
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+            mask = cv2.dilate(mask, kernel, iterations=2)
+            
+    return mask
+
+
 def detect_skin_mask(image):
-    """Detect skin tones using multiple HSV ranges."""
+    """Detect skin tones using multiple HSV ranges (Fallback)."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     ranges = [
         (np.array([0, 20, 70]), np.array([20, 150, 255])),
@@ -261,20 +327,7 @@ def smart_scan_document(
     white_balance_enabled=True,
     border_cleanup=True,
 ):
-    """
-    Full document scanning pipeline:
-    1. Detect page color and find boundaries
-    2. Flatten perspective (deskew)
-    3. Clean up borders
-    4. Auto white balance
-    5. Auto rotate skewed text
-    6. Remove hands and fingers
-    7. Remove shadows and bleed through
-    8. Denoise old documents
-    9. Enhance text contrast
-    10. Sharpen text edges
-    11. Convert to black and white (optional)
-    """
+    """Full document scanning pipeline."""
     # Step 1: Detect and crop to page
     page_color = get_dominant_page_color(image_bgr)
     page_mask = create_page_mask(image_bgr, page_color, tolerance=crop_tolerance)
@@ -303,9 +356,14 @@ def smart_scan_document(
 
     # Step 5: Remove hands
     if remove_hands:
-        skin_mask = detect_skin_mask(result)
-        if np.any(skin_mask):
-            result = inpaint_region(result, skin_mask)
+        hand_mask = detect_hands_ai(result)
+        
+        # Fallback to color if AI fails or finds nothing
+        if hand_mask is None or not np.any(hand_mask):
+            hand_mask = detect_skin_mask(result)
+            
+        if hand_mask is not None and np.any(hand_mask):
+            result = inpaint_region(result, hand_mask)
 
     # Step 6: Remove shadows
     if fix_shadows:

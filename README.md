@@ -5,7 +5,9 @@ No cloud APIs, no data collection, no watermarks, no subscriptions.
 Your files never leave your device.
 
 ## Live Demo
-Try it now on Streamlit Cloud (link in repository description)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/)
+
+Try it now: https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/
 
 ## Features
 
@@ -16,9 +18,10 @@ Auto rotates skewed text using Hough Line analysis.
 Removes dark borders left after perspective correction.
 
 ### Intelligent Cleanup
-Detects skin tones (hands, fingers, thumbs) across light, medium, and dark skin types using HSV color segmentation.
+Detects skin tones (hands, fingers, thumbs) for all skin types using **MediaPipe AI Landmarks**.
 Erases detected hands using the Telea Fast Marching inpainting algorithm.
 Removes phone shadows and back page bleed through by estimating the background illumination field.
+**Mobile Camera Support**: Scan documents directly from your phone's browser using built-in camera integration.
 
 ### Color and Lighting
 Auto white balance correction using the Gray World algorithm to fix color casts from artificial lighting.
@@ -49,7 +52,7 @@ Full PDF processing with per page preview gallery.
 |---|---|---|---|
 | No watermarks | Paid | Free | Free |
 | Perspective flattening | Paid | Paid | Free |
-| Hand and finger removal | No | No | Free |
+| Hand and finger removal | No | No | **Yes (AI Powered)** |
 | Shadow removal | Paid | Paid | Free |
 | Bleed through removal | No | No | Free |
 | Auto white balance | No | Paid | Free |
@@ -60,6 +63,7 @@ Full PDF processing with per page preview gallery.
 | Offline OCR | No (cloud) | No (cloud) | Free |
 | Searchable PDF | Paid | Paid | Free |
 | Batch multi file upload | Paid | Paid | Free |
+| Mobile Camera Input | Yes | Yes | **Yes (Direct)** |
 | ZIP download | No | No | Free |
 | Combined PDF export | No | Paid | Free |
 | DPI quality control | No | No | Free |
@@ -71,7 +75,7 @@ Full PDF processing with per page preview gallery.
 src/
   smart_scanner.py   # 11 step computer vision pipeline
   pdf_tools.py       # PDF page manipulation utilities
-  vision_ocr.py      # Google Cloud Vision wrapper (optional, not used in the app)
+  vision_ocr.py      # Legacy research module, not used in the app
 app.py               # Streamlit web interface
 packages.txt         # System dependencies for Streamlit Cloud (Tesseract)
 requirements.txt     # Python dependencies
