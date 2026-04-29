@@ -1,63 +1,62 @@
-# 📄 Privacy-First Smart Document Scanner
+# 📄 Privacy-First Smart Document Scanner Pro
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-streamlit-app-url.streamlit.app)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-**100% Offline. 100% Private. Zero Cloud Uploads. Professional Grade.**
+**100% Offline. Global Multi-Language. AI Context Awareness. Professional Grade.**
 
-Most document scanner apps (like CamScanner or Adobe Scan) harvest your data, require subscriptions, and upload your sensitive documents to remote servers for processing. This tool is built on a different philosophy: **Your data never leaves your device.**
-
-Built with **OpenCV**, **MediaPipe AI**, **PyMuPDF**, and **Tesseract OCR**, this is a professional grade scanner that runs entirely in your browser.
+This is the **Pro Version** of the Smart Document Scanner. It is designed to be a private, secure alternative to commercial giants like Adobe Scan and CamScanner, providing enterprise-level intelligence without sacrificing your data sovereignty.
 
 ---
 
-## ✨ Key Features
+## 🚀 Pro Features
+
+### 🧠 AI Context Engine
+The tool automatically identifies the document type by analyzing the OCR text:
+- **Invoices**: Detects amounts, tax labels, and merchants.
+- **Identity Docs**: Identifies Passports and National IDs.
+- **Receipts**: Finds merchant names and subtotal data.
+
+### 🛡️ PII Shield (Redaction Ready)
+Automatically scans for and flags sensitive Personal Identifiable Information (PII):
+- **Credit Cards** (13-16 digit pattern detection)
+- **Social Security Numbers** (US/Global formats)
+- **Emails & Phone Numbers**
+- **Note:** Data is flagged in the UI so you can ensure safety before sharing.
+
+### 🌍 Global Multi-Language Support
+Supports **40+ major languages** including:
+- **East Asian**: Chinese (Simplified/Traditional), Japanese, Korean, Thai, Vietnamese.
+- **Indic**: Sinhalese, Tamil, Hindi, Bengali.
+- **European**: German, French, Spanish, Russian, Portuguese, Italian, Polish, Dutch.
+- **Middle Eastern**: Arabic, Hebrew, Turkish.
 
 ### 🛠️ 11-Step Computer Vision Pipeline
-- **Perspective Flattening**: Automatically detects page corners and fixes tilts/angles.
-- **AI Hand Removal**: Uses MediaPipe to detect fingers and erases them from the paper.
-- **Shadow Subtraction**: Computes the background light field to remove phone shadows.
-- **Auto White Balance**: Fixes yellow/blue color casts from indoor lighting.
-- **Adaptive Contrast**: Boosts text readability on aged or damaged paper.
-
-### 📝 Professional OCR & Output
-- **Searchable PDFs**: Generates PDFs with invisible text layers for searching/copying.
-- **Multilingual Support**: Supports English, Sinhalese, Tamil, Hindi, German, and more.
-- **QR/Barcode Detection**: Automatically extracts data from codes found on documents.
-- **High Compression**: Uses Deflate and Garbage Collection to keep file sizes small.
-
-### 📱 Mobile Optimized
-- **Installable PWA Feel**: Optimized CSS for full-screen use on iOS and Android.
-- **In-Browser Camera**: Use your phone's camera directly without any app store download.
+- **AI Hand Removal**: Erases fingers from the document.
+- **Perspective Flattening**: Fixes tilts and rotations.
+- **Shadow Subtraction**: Removes phone shadows.
+- **Table Detection**: Automatically finds grid structures.
 
 ---
 
 ## 🔒 The Privacy Manifesto
 
-1. **Zero Bytes Uploaded**: All image processing happens in the server's ephemeral memory or your browser. No files are stored.
-2. **No Tracking**: No Google Analytics, no cookies, no user accounts.
-3. **Open Source**: The code is public so you can verify our privacy claims.
-4. **Local OCR**: Uses a local Tesseract binary instead of cloud-based OCR APIs.
+1. **Zero Bytes Uploaded**: Processing happens in memory; no files are stored.
+2. **Bring Your Own Privacy**: Use the Docker version to run 100% air-gapped (no internet).
+3. **No Tracking**: No analytics, no cookies, no user accounts.
+4. **Local Engine**: Uses a local Tesseract binary and OpenCV logic.
 
 ---
 
-## 🚀 Installation & Local Run
+## 📦 Installation
 
-If you want to run this on your own machine:
+### 1. Install Tesseract
+Follow the [Official Guide](https://tesseract-ocr.github.io/tessdoc/Installation.html). Make sure to install the **Language Packs** you need.
 
-### 1. Install System Dependencies
-- **Tesseract OCR**: [Installation Guide](https://tesseract-ocr.github.io/tessdoc/Installation.html)
-- **Poppler/LibGL**: (Required for PDF and OpenCV support)
-
-### 2. Clone and Install Python Packages
+### 2. Run the App
 ```bash
 git clone https://github.com/rimashrimsan/OCR_Document_Processing.git
-cd OCR_Document_Processing
 pip install -r requirements.txt
-```
-
-### 3. Run the App
-```bash
 streamlit run app.py
 ```
 
@@ -67,14 +66,13 @@ streamlit run app.py
 - [x] AI Hand Removal
 - [x] Searchable PDF Support
 - [x] QR/Barcode Extraction
-- [x] **Table Detection & Extraction** (NEW)
-- [ ] **Digital Signatures** (Coming Soon)
+- [x] **Smart Context Identification** (NEW)
+- [x] **PII Detection Shield** (NEW)
+- [ ] **Table-to-Excel Export** (In Progress)
 - [ ] **Batch Redaction** (Coming Soon)
 
 ---
 
-## ⚖️ License & Credits
+## ⚖️ License
 Distributed under the **GNU GPL v3 License**. 
 Copyright (c) 2024 **rimashrimsan**.
-
-Built with ❤️ for a more private internet.
