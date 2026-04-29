@@ -9,6 +9,7 @@ import io
 import zipfile
 import gc
 import datetime
+import shutil
 
 # Add current directory to path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,35 +18,41 @@ if current_dir not in sys.path:
 
 from src.smart_scanner import smart_scan_document
 
-# Try to import Tesseract for offline OCR
+# ──────────────────────────────────────────
+# TESSERACT INITIALIZATION
+# ──────────────────────────────────────────
+TESSERACT_AVAILABLE = False
 try:
     import pytesseract
-    import shutil
-    import os
     
-    TESSERACT_AVAILABLE = False
-    
-    # List of possible paths to check
-    possible_paths = [
-        shutil.which("tesseract"),
-        "/usr/bin/tesseract",
-        "/usr/local/bin/tesseract",
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))
-    ]
-    
-    for path in possible_paths:
-        if path and os.path.exists(path):
-            pytesseract.pytesseract.tesseract_cmd = path
-            TESSERACT_AVAILABLE = True
-            break
+    # Aggressive search for Tesseract binary
+    def find_tesseract():
+        # 1. Check system path
+        path = shutil.which("tesseract")
+        if path: return path
+        
+        # 2. Check absolute Linux paths (Streamlit Cloud)
+        for p in ["/usr/bin/tesseract", "/usr/local/bin/tesseract"]:
+            if os.path.exists(p): return p
             
-    # Final fallback for Streamlit Cloud (Assume it's in the system path if on Linux)
-    if not TESSERACT_AVAILABLE and os.name == 'posix':
-        TESSERACT_AVAILABLE = True
-        # Don't set tesseract_cmd, let it use the default "tesseract"
+        # 3. Check absolute Windows paths
+        for p in [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))
+        ]:
+            if os.path.exists(p): return p
+        return None
 
-except Exception:
+    tess_path = find_tesseract()
+    if tess_path:
+        pytesseract.pytesseract.tesseract_cmd = tess_path
+        TESSERACT_AVAILABLE = True
+    elif os.name == 'posix':
+        # Final fallback for Linux: just use the command name and hope for the best
+        TESSERACT_AVAILABLE = True
+        pytesseract.pytesseract.tesseract_cmd = "tesseract"
+        
+except ImportError:
     TESSERACT_AVAILABLE = False
 
 st.set_page_config(
@@ -146,7 +153,7 @@ if TESSERACT_AVAILABLE:
 else:
     ocr_enabled = False
     searchable_pdf_enabled = False
-    st.sidebar.warning("Install pytesseract and Tesseract OCR for offline text extraction.")
+    st.sidebar.warning("⚠️ OCR Engine not found. Please reboot the app in the Streamlit Dashboard (Manage App -> Reboot) to install dependencies.")
 
 st.sidebar.markdown("***")
 
@@ -250,14 +257,20 @@ def bgr_to_pil(bgr_img):
 def run_ocr(pil_img):
     if not TESSERACT_AVAILABLE:
         return ""
-    return pytesseract.image_to_string(pil_img, lang=ocr_lang)
+    try:
+        return pytesseract.image_to_string(pil_img, lang=ocr_lang)
+    except Exception as e:
+        return f"OCR Error: {str(e)}"
 
 
 def make_searchable_pdf_page(pil_img):
     """Generate a searchable PDF page with invisible text layer."""
     if not TESSERACT_AVAILABLE:
         return None
-    return pytesseract.image_to_pdf_or_hocr(np.array(pil_img), extension='pdf', lang=ocr_lang)
+    try:
+        return pytesseract.image_to_pdf_or_hocr(np.array(pil_img), extension='pdf', lang=ocr_lang)
+    except Exception:
+        return None
 
 
 # Combine camera and uploaded images
@@ -516,3 +529,4 @@ if final_image_list:
 # ──────────────────────────────────────────
 st.markdown("***")
 st.caption("Built with OpenCV, NumPy, MediaPipe AI, PyMuPDF, and Tesseract OCR. No data leaves your browser.")
+st.caption(f"Engine Info: {tess_path if 'tess_path' in locals() else 'System Path'}")
