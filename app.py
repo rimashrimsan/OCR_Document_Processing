@@ -11,7 +11,6 @@ import gc
 import datetime
 import shutil
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 # Add current directory to path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -64,7 +63,6 @@ st.markdown("""
 
 QR_DETECTOR = cv2.QRCodeDetector()
 
-# Initialize Session State
 if "cam_active" not in st.session_state:
     st.session_state.cam_active = False
 
@@ -98,7 +96,7 @@ def analyze_document_context(text):
         if 3 < len(first) < 30: suggested_name = f"{found_type}_{first.replace(' ', '_')}"
     return found_type, suggested_name
 
-def redact_sensitive_data(text):
+def detect_pii(text):
     found = []
     for label, pattern in RE_PATTERNS.items():
         if re.search(pattern, text): found.append(label)
@@ -108,9 +106,8 @@ def redact_sensitive_data(text):
 # SIDEBAR
 # ──────────────────────────────────────────
 st.sidebar.title("⚙️ Scanner Settings")
-
 st.sidebar.markdown("**Pro Features**")
-pii_redaction_setting = st.sidebar.checkbox("AI PII Detection", value=False)
+pii_redaction_setting = st.sidebar.checkbox("PII Security Detection", value=False)
 smart_naming_setting = st.sidebar.checkbox("Smart Filenaming", value=True)
 
 st.sidebar.markdown("**Page Detection**")
@@ -189,20 +186,19 @@ def detect_qr(img_bgr):
 st.title("📄 Smart Document Scanner Pro")
 st.markdown("Global Support | AI Context | 100% Private")
 
-# CAMERA CONTROL (Always ask, never auto-start)
-st.subheader("📷 Scan with Camera")
+st.subheader("📷 Camera Scan")
 if not st.session_state.cam_active:
     if st.button("🚀 Open Camera Scanner", type="secondary"):
         st.session_state.cam_active = True
         st.rerun()
 else:
-    camera_photo = st.camera_input("Position document and capture")
+    camera_photo = st.camera_input("Capture document")
     if st.button("❌ Close Camera"):
         st.session_state.cam_active = False
         st.rerun()
 
 st.subheader("📁 Upload Files")
-uploaded_files = st.file_uploader("Drop images or PDFs here", type=["jpg", "jpeg", "png", "pdf", "tiff", "webp"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Images or PDFs", type=["jpg", "jpeg", "png", "pdf", "tiff", "webp"], accept_multiple_files=True)
 
 current_settings = {
     "crop_tolerance": crop_tol, "remove_hands": remove_hands_setting, "enhance_contrast": enhance_text_setting,
@@ -232,24 +228,52 @@ if uploaded_files:
 if final_image_list:
     if st.button("✨ Process All Documents", type="primary"):
         all_text = []
-        def task(item):
-            name, image = item
+        qr_results = []
+        table_results = []
+        processed_results = []
+        
+        # PROGRESS BAR
+        total = len(final_image_list)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, (name, image) in enumerate(final_image_list):
+            status_text.text(f"Processing ({i+1}/{total}): {name}...")
+            
+            # 1. Image Cleanup
             img_bgr = pil_to_bgr(image)
             scan_res = process_single_image_cached(img_bgr, current_settings)
-            if table_detection_setting: scanned_bgr, table = scan_res
-            else: scanned_bgr, table = scan_res, None
+            
+            if table_detection_setting:
+                scanned_bgr, table = scan_res
+                if table is not None and np.any(table): table_results.append(f"{name}: Table Found")
+            else:
+                scanned_bgr, table = scan_res, None
+            
+            # 2. Advanced Detection
+            qr = detect_qr(scanned_bgr)
+            if qr: qr_results.append(f"{name}: {qr}")
             
             scanned_pil = bgr_to_pil(scanned_bgr)
-            qr = detect_qr(scanned_bgr)
+            
+            # 3. OCR & Context
             text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
-            doc_type, sname = analyze_document_context(text)
-            pii = redact_sensitive_data(text) if pii_redaction_setting else []
-            return (name, image, scanned_pil, text, qr, table, doc_type, sname, pii)
+            dtype, sname = analyze_document_context(text)
+            pii = detect_pii(text) if pii_redaction_setting else []
+            
+            processed_results.append((name, image, scanned_pil, text, qr, table, dtype, sname, pii))
+            
+            # 4. Update Progress
+            progress_bar.progress((i + 1) / total)
+            
+            # 5. Memory Cleanup
+            del img_bgr, scanned_bgr
+            gc.collect()
 
-        with ThreadPoolExecutor() as executor:
-            results = list(executor.map(task, final_image_list))
+        status_text.text("✅ Processing Complete!")
 
-        for name, original, cleaned, text, qr, table, dtype, sname, pii in results:
+        # DISPLAY RESULTS
+        for name, original, cleaned, text, qr, table, dtype, sname, pii in processed_results:
             st.markdown(f"### {name}")
             badges = f"<span class='badge badge-blue'>{dtype}</span>"
             if qr: badges += f"<span class='badge'>🔍 QR Found</span>"
@@ -258,22 +282,51 @@ if final_image_list:
             st.markdown(badges, unsafe_allow_html=True)
 
             col1, col2 = st.columns(2)
-            col1.image(original, caption="Original", use_container_width=True)
-            col2.image(cleaned, caption="Cleaned", use_container_width=True)
+            col1.image(original, caption="Original")
+            col2.image(cleaned, caption="Cleaned")
 
             if smart_naming_setting: st.caption(f"Suggested: **{sname}.pdf**")
 
             dl_cols = st.columns(3)
             buf_p = io.BytesIO(); cleaned.save(buf_p, format="PNG")
-            dl_cols[0].download_button("⬇️ PNG", buf_p.getvalue(), f"{sname}.png", "image/png", key=f"p_{name}")
+            dl_cols[0].download_button("⬇️ PNG", buf_p.getvalue(), f"{sname}.png", "image/png", key=f"png_{name}")
             buf_d = io.BytesIO(); cleaned.save(buf_d, format="PDF", resolution=output_dpi)
-            dl_cols[1].download_button("⬇️ PDF", buf_d.getvalue(), f"{sname}.pdf", "application/pdf", key=f"d_{name}")
+            dl_cols[1].download_button("⬇️ PDF", buf_d.getvalue(), f"{sname}.pdf", "application/pdf", key=f"pdf_{name}")
             if text: all_text.append(f"--- {name} ({dtype}) ---\n{text}")
 
+        # BATCH DOWNLOADS
+        if total > 1:
+            st.divider()
+            st.markdown("**Batch Downloads**")
+            b_cols = st.columns(2)
+            with b_cols[0]:
+                z_buf = io.BytesIO()
+                with zipfile.ZipFile(z_buf, "w") as zf:
+                    for name, _, cleaned, _, _, _, _, sname, _ in processed_results:
+                        img_buf = io.BytesIO()
+                        cleaned.save(img_buf, format="PNG")
+                        zf.writestr(f"{sname}.png", img_buf.getvalue())
+                st.download_button("📦 All Images (ZIP)", z_buf.getvalue(), "scans.zip", "application/zip")
+            with b_cols[1]:
+                c_pdf = fitz.open()
+                for _, _, cleaned, _, _, _, _, _, _ in processed_results:
+                    buf = io.BytesIO()
+                    cleaned.save(buf, format="PDF", resolution=output_dpi)
+                    temp = fitz.open("pdf", buf.getvalue())
+                    c_pdf.insert_pdf(temp)
+                    temp.close()
+                st.download_button("📄 All as Single PDF", c_pdf.write(deflate=True), "combined_scan.pdf", "application/pdf")
+
+        if qr_results or table_results:
+            with st.expander("🔍 Findings Log"):
+                for r in qr_results: st.write(f"✅ QR: {r}")
+                for t in table_results: st.write(f"📊 Table: {t}")
+
         if all_text:
-            with st.expander("📝 Extracted Text"):
-                st.text_area("Results", "\n\n".join(all_text), height=300)
-                st.download_button("📝 Download TXT", "\n\n".join(all_text), "scanned_data.txt")
+            with st.expander("📝 All Extracted Text"):
+                full = "\n\n".join(all_text)
+                st.text_area("Results", full, height=300)
+                st.download_button("📝 Download TXT", full, "data.txt")
 
 st.markdown("***")
 st.markdown("<div style='text-align: center;'><span class='badge'>🛡️ Privacy Verified: 100% Offline Processing</span></div>", unsafe_allow_html=True)
