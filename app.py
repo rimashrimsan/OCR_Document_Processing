@@ -23,33 +23,29 @@ try:
     import shutil
     import os
     
-    # 1. Try to find it in the system PATH
-    tess_path = shutil.which("tesseract")
+    TESSERACT_AVAILABLE = False
     
-    # 2. If not in PATH, check the absolute Linux location (Streamlit Cloud)
-    if not tess_path and os.name == 'posix':
-        linux_path = "/usr/bin/tesseract"
-        if os.path.exists(linux_path):
-            tess_path = linux_path
-            
-    # 3. Check common Windows path
-    if not tess_path and os.name == 'nt':
-        windows_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        if os.path.exists(windows_path):
-            tess_path = windows_path
-
-    if tess_path:
-        pytesseract.pytesseract.tesseract_cmd = tess_path
-        TESSERACT_AVAILABLE = True
-    else:
-        # Final safety check for Streamlit Cloud
-        if os.path.exists("/usr/bin/tesseract"):
-            pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+    # List of possible paths to check
+    possible_paths = [
+        shutil.which("tesseract"),
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))
+    ]
+    
+    for path in possible_paths:
+        if path and os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
             TESSERACT_AVAILABLE = True
-        else:
-            TESSERACT_AVAILABLE = False
+            break
+            
+    # Final fallback for Streamlit Cloud (Assume it's in the system path if on Linux)
+    if not TESSERACT_AVAILABLE and os.name == 'posix':
+        TESSERACT_AVAILABLE = True
+        # Don't set tesseract_cmd, let it use the default "tesseract"
 
-except ImportError:
+except Exception:
     TESSERACT_AVAILABLE = False
 
 st.set_page_config(
