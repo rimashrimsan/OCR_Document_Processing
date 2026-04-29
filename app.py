@@ -145,9 +145,7 @@ if TESSERACT_AVAILABLE:
         "Bengali": "ben", "Chinese (Simp)": "chi_sim", "Chinese (Trad)": "chi_tra",
         "French": "fra", "German": "deu", "Italian": "ita", "Japanese": "jpn", 
         "Korean": "kor", "Portuguese": "por", "Russian": "rus", "Spanish": "spa",
-        "Thai": "tha", "Turkish": "tur", "Vietnamese": "vie", "Dutch": "nld",
-        "Polish": "pol", "Greek": "gre", "Hebrew": "heb", "Indonesian": "ind",
-        "Malay": "msa", "Ukrainian": "ukr", "Czech": "ces", "Hungarian": "hun"
+        "Thai": "tha", "Turkish": "tur", "Vietnamese": "vie", "Greek": "ell"
     }
     selected_lang = st.sidebar.selectbox("OCR Language", list(lang_options.keys()))
     ocr_lang = lang_options[selected_lang]
