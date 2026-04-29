@@ -4,6 +4,4 @@ numpy
 Pillow
 pymupdf
 pytesseract
-mediapipe
-protobuf
 scikit-learn
