@@ -1,6 +1,15 @@
 import cv2
 import numpy as np
+from PIL import Image
+import math
 from sklearn.cluster import KMeans
+
+# Safety wrapper for MediaPipe
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
 
 # Global variables for AI detection (initialized lazily)
 _MEDIAPIPE_HANDS = None
@@ -135,10 +144,10 @@ def four_point_transform(image, pts):
 
 
 def detect_hands_ai(image):
-    """
-    Detect hands using MediaPipe AI landmarks.
-    Works for all skin tones and is much more accurate than color filtering.
-    """
+    """Detect hands using MediaPipe AI with safety check."""
+    if not MEDIAPIPE_AVAILABLE:
+        return None
+    global _MEDIAPIPE_HANDS, _HANDS_DETECTOR
     detector = get_hands_detector()
     if detector is None:
         return None
