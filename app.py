@@ -10,7 +10,11 @@ import zipfile
 import gc
 import datetime
 
-sys.path.append(os.path.dirname(__file__))
+# Add current directory to path for local imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 from src.smart_scanner import smart_scan_document
 
 # Try to import Tesseract for offline OCR
