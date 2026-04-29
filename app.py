@@ -8,6 +8,7 @@ import os
 import io
 import zipfile
 import gc
+import datetime
 
 sys.path.append(os.path.dirname(__file__))
 from src.smart_scanner import smart_scan_document
@@ -124,7 +125,6 @@ st.sidebar.markdown("***")
 # Output and Safety
 st.sidebar.markdown("**File Naming & Quality**")
 file_prefix = st.sidebar.text_input("File Prefix", value="Scan", help="Prefix for your saved files.")
-import datetime
 current_date = datetime.datetime.now().strftime("%Y-%m-%d")
 add_date = st.sidebar.checkbox("Add Date to Filename", value=True)
 final_prefix = f"{file_prefix}_{current_date}_" if add_date else f"{file_prefix}_"
