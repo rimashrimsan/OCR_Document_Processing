@@ -17,7 +17,14 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from src.smart_scanner import smart_scan_document
+# Smart Import for logic (handles both root and src/ folder structures)
+try:
+    from src.smart_scanner import smart_scan_document
+except ImportError:
+    try:
+        from smart_scanner import smart_scan_document
+    except ImportError:
+        st.error("⚠️ Critical Error: Scanning logic (smart_scanner.py) not found in src/ or root.")
 
 # ──────────────────────────────────────────
 # TESSERACT INITIALIZATION
