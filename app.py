@@ -20,7 +20,19 @@ from src.smart_scanner import smart_scan_document
 # Try to import Tesseract for offline OCR
 try:
     import pytesseract
-    TESSERACT_AVAILABLE = True
+    # Check if tesseract is in the system path
+    import shutil
+    tess_path = shutil.which("tesseract")
+    if not tess_path:
+        # Check common Windows path as a backup for the user
+        windows_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if os.path.exists(windows_path):
+            pytesseract.pytesseract.tesseract_cmd = windows_path
+            TESSERACT_AVAILABLE = True
+        else:
+            TESSERACT_AVAILABLE = False
+    else:
+        TESSERACT_AVAILABLE = True
 except ImportError:
     TESSERACT_AVAILABLE = False
 
