@@ -85,7 +85,7 @@ st.sidebar.markdown("***")
 st.sidebar.markdown("**Text Extraction (OCR)**")
 if TESSERACT_AVAILABLE:
     ocr_enabled = st.sidebar.checkbox("Extract Text (OCR)", value=False)
-    lang_map = {"English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "German": "deu", "French": "fra", "Spanish": "spa", "Custom": "custom"}
+    lang_map = {"English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "German": "deu", "French": "fra", "Spanish": "spa", "Arabic": "ara", "Custom": "custom"}
     selected_lang_name = st.sidebar.selectbox("Language", list(lang_map.keys()))
     ocr_lang = st.sidebar.text_input("Code", "eng") if selected_lang_name == "Custom" else lang_map[selected_lang_name]
     searchable_pdf_enabled = st.sidebar.checkbox("Searchable PDF", value=False)
@@ -166,6 +166,7 @@ if (uploaded_files or camera_photo):
         all_extracted_text = []
         qr_results = []
 
+        # PROCESS PDFs
         if 'pdf_files' in locals() and pdf_files:
             for pdf_file in pdf_files:
                 st.subheader(f"📑 {pdf_file.name}")
@@ -174,7 +175,6 @@ if (uploaded_files or camera_photo):
                     pages_to_process = min(len(doc), max_pages_to_process)
                     searchable_pdf_parts = [] if (searchable_pdf_enabled and TESSERACT_AVAILABLE) else None
                     output_pdf = fitz.open() if not searchable_pdf_parts else None
-                    
                     progress = st.progress(0)
                     pdf_text_parts = []
                     
@@ -185,9 +185,8 @@ if (uploaded_files or camera_photo):
                         scanned_bgr = process_single_image_cached(img_bgr, current_settings)
                         scanned_pil = bgr_to_pil(scanned_bgr)
                         
-                        # QR Detection
                         qr_data = detect_qr(scanned_bgr)
-                        if qr_data: qr_results.append(f"Page {i+1} QR: {qr_data}")
+                        if qr_data: qr_results.append(f"{pdf_file.name} P{i+1}: {qr_data}")
 
                         if ocr_enabled:
                             text = run_ocr_cached(scanned_pil, ocr_lang)
@@ -202,7 +201,6 @@ if (uploaded_files or camera_photo):
                             temp_pdf = fitz.open("pdf", buf.getvalue())
                             output_pdf.insert_pdf(temp_pdf)
                             temp_pdf.close()
-                        
                         progress.progress((i+1)/pages_to_process)
                     
                     if searchable_pdf_parts:
@@ -217,31 +215,27 @@ if (uploaded_files or camera_photo):
                         final_bytes = output_pdf.write(deflate=True, garbage=3)
                         output_pdf.close()
                     
-                    st.download_button("⬇️ Download PDF", final_bytes, f"{final_prefix}{pdf_file.name}", "application/pdf")
+                    st.download_button(f"⬇️ Download PDF ({pdf_file.name})", final_bytes, f"{final_prefix}{pdf_file.name}", "application/pdf")
                     if ocr_enabled: all_extracted_text.append("\n\n".join(pdf_text_parts))
                     doc.close()
                 except Exception as e: st.error(f"Error: {str(e)}")
 
+        # PROCESS IMAGES
         if final_image_list:
             st.subheader(f"🖼️ Images")
-            def process_task(item):
+            
+            def process_image_task(item):
                 name, image = item
                 img_bgr = pil_to_bgr(image)
                 scanned_bgr = process_single_image_cached(img_bgr, current_settings)
                 scanned_pil = bgr_to_pil(scanned_bgr)
-                qr = detect_qr(scanned_bgr)
+                qr_data = detect_qr(scanned_bgr)
                 text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
-                return (name, original, scanned_pil, text, qr)
+                return (name, image, scanned_pil, text, qr_data)
 
-            results = []
-            for item in final_image_list:
-                name, image = item
-                img_bgr = pil_to_bgr(image)
-                scanned_bgr = process_single_image_cached(img_bgr, current_settings)
-                scanned_pil = bgr_to_pil(scanned_bgr)
-                qr = detect_qr(scanned_bgr)
-                text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
-                results.append((name, image, scanned_pil, text, qr))
+            # Parallel processing for images
+            with ThreadPoolExecutor() as executor:
+                results = list(executor.map(process_image_task, final_image_list))
 
             for name, original, cleaned, text, qr in results:
                 st.markdown(f"**{name}**")
@@ -249,10 +243,41 @@ if (uploaded_files or camera_photo):
                 col1, col2 = st.columns(2)
                 col1.image(original, caption="Original")
                 col2.image(cleaned, caption="Cleaned")
-                buf = io.BytesIO()
-                cleaned.save(buf, format="PNG")
-                st.download_button(f"⬇️ Download {name}", buf.getvalue(), f"cleaned_{name}", "image/png")
+                
+                dl_cols = st.columns(3)
+                with dl_cols[0]:
+                    buf = io.BytesIO()
+                    cleaned.save(buf, format="PNG")
+                    st.download_button(f"⬇️ PNG", buf.getvalue(), f"cleaned_{name}", "image/png")
+                with dl_cols[1]:
+                    buf_pdf = io.BytesIO()
+                    cleaned.save(buf_pdf, format="PDF", resolution=output_dpi)
+                    st.download_button(f"⬇️ PDF", buf_pdf.getvalue(), f"cleaned_{os.path.splitext(name)[0]}.pdf", "application/pdf")
+                
                 if text: all_extracted_text.append(f"--- {name} ---\n{text}")
+
+        # Batch Downloads for multiple images
+        if len(final_image_list) > 1:
+            st.divider()
+            st.markdown("**Batch Downloads**")
+            b_cols = st.columns(2)
+            with b_cols[0]:
+                z_buf = io.BytesIO()
+                with zipfile.ZipFile(z_buf, "w") as zf:
+                    for name, _, cleaned, _, _ in results:
+                        img_buf = io.BytesIO()
+                        cleaned.save(img_buf, format="PNG")
+                        zf.writestr(f"cleaned_{name}", img_buf.getvalue())
+                st.download_button("📦 Download All Images (ZIP)", z_buf.getvalue(), "cleaned_images.zip", "application/zip")
+            with b_cols[1]:
+                c_pdf = fitz.open()
+                for _, _, cleaned, _, _ in results:
+                    buf = io.BytesIO()
+                    cleaned.save(buf, format="PDF", resolution=output_dpi)
+                    temp = fitz.open("pdf", buf.getvalue())
+                    c_pdf.insert_pdf(temp)
+                    temp.close()
+                st.download_button("📄 Download All as Single PDF", c_pdf.write(deflate=True), "batch_scan.pdf", "application/pdf")
 
         if qr_results:
             with st.expander("🔍 Found QR/Barcodes"):
@@ -262,7 +287,7 @@ if (uploaded_files or camera_photo):
             with st.expander("📝 Extracted Text"):
                 full = "\n\n".join(all_extracted_text)
                 st.text_area("Text", full, height=300)
-                st.download_button("📝 Download Text", full, "scanned_text.txt")
+                st.download_button("📝 Download Text File", full, "scanned_text.txt")
 
 st.markdown("***")
-st.caption(f"Engine: {tess_path if 'tess_path' in locals() else 'System'}")
+st.caption(f"Engine Info: {tess_path if 'tess_path' in locals() else 'System Path'}")
