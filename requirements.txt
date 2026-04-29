@@ -1,8 +1,8 @@
 streamlit
 opencv-python-headless
-scikit-learn
 numpy
 Pillow
-PyMuPDF
+pymupdf
 pytesseract
 mediapipe
+scikit-learn

@@ -20,4 +20,6 @@ tesseract-ocr-tha
 tesseract-ocr-tur
 tesseract-ocr-ell
 libgl1
+libgl1-mesa-glx
+libglib2.0-0
 libtesseract-dev

@@ -1,9 +1,6 @@
 # 📄 Privacy First Smart Document Scanner Pro
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-streamlit-app-url.streamlit.app)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-
-**100% Offline. Global Multi-Language. AI Context Awareness. Professional Grade.**
+**Production Grade | 100% Offline | AI-Powered Intelligence**
 
 This is the **Pro Version** of the Smart Document Scanner. It is designed to be a private, secure alternative to commercial giants like Adobe Scan and CamScanner, providing enterprise-level intelligence without sacrificing your data sovereignty.
 
