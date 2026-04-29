@@ -2,6 +2,13 @@
 
 **Production Grade | 100% Offline | AI-Powered Intelligence**
 
+## 🚀 Live Demo
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/)
+
+**Try it now:** [ocrdocumentprocessing.streamlit.app](https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/)
+
+---
+
 This is the **Pro Version** of the Smart Document Scanner. It is designed to be a private, secure alternative to commercial giants like Adobe Scan and CamScanner, providing enterprise-level intelligence without sacrificing your data sovereignty.
 
 ---
@@ -19,43 +26,16 @@ Automatically scans for and flags sensitive Personal Identifiable Information (P
 - **Credit Cards** (13-16 digit pattern detection)
 - **Social Security Numbers** (US/Global formats)
 - **Emails & Phone Numbers**
-- **Note:** Data is flagged in the UI so you can ensure safety before sharing.
 
 ### 🌍 Global Multi-Language Support
-Supports **40+ major languages** including:
-- **East Asian**: Chinese (Simplified/Traditional), Japanese, Korean, Thai, Vietnamese.
-- **Indic**: Sinhalese, Tamil, Hindi, Bengali.
-- **European**: German, French, Spanish, Russian, Portuguese, Italian, Polish, Dutch.
-- **Middle Eastern**: Arabic, Hebrew, Turkish.
-
-### 🛠️ 11-Step Computer Vision Pipeline
-- **AI Hand Removal**: Erases fingers from the document.
-- **Perspective Flattening**: Fixes tilts and rotations.
-- **Shadow Subtraction**: Removes phone shadows.
-- **Table Detection**: Automatically finds grid structures.
+Supports major world languages including English, Sinhalese, Tamil, Hindi, Arabic, Chinese, French, German, Russian, and Spanish.
 
 ---
 
 ## 🔒 The Privacy Manifesto
-
 1. **Zero Bytes Uploaded**: Processing happens in memory; no files are stored.
-2. **Bring Your Own Privacy**: Use the Docker version to run 100% air-gapped (no internet).
-3. **No Tracking**: No analytics, no cookies, no user accounts.
-4. **Local Engine**: Uses a local Tesseract binary and OpenCV logic.
-
----
-
-## 📦 Installation
-
-### 1. Install Tesseract
-Follow the [Official Guide](https://tesseract-ocr.github.io/tessdoc/Installation.html). Make sure to install the **Language Packs** you need.
-
-### 2. Run the App
-```bash
-git clone https://github.com/rimashrimsan/OCR_Document_Processing.git
-pip install -r requirements.txt
-streamlit run app.py
-```
+2. **No Tracking**: No analytics, no cookies, no user accounts.
+3. **Local Engine**: Uses a local Tesseract binary and OpenCV logic.
 
 ---
 
@@ -63,10 +43,10 @@ streamlit run app.py
 - [x] AI Hand Removal
 - [x] Searchable PDF Support
 - [x] QR/Barcode Extraction
-- [x] **Smart Context Identification** (NEW)
-- [x] **PII Detection Shield** (NEW)
-- [ ] **Table-to-Excel Export** (In Progress)
-- [ ] **Batch Redaction** (Coming Soon)
+- [x] Smart Context Identification
+- [x] PII Detection Shield
+- [ ] Table-to-Excel Export
+- [ ] Batch Redaction
 
 ---
 
