@@ -1,9 +1,9 @@
 import streamlit as st
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 import fitz  # PyMuPDF
-import sys
+from pytesseract import Output
 import os
 import io
 import zipfile
@@ -111,7 +111,7 @@ def detect_pii(text):
 # ──────────────────────────────────────────
 st.sidebar.title("⚙️ Scanner Settings")
 st.sidebar.markdown("**Pro Features**")
-pii_redaction_setting = st.sidebar.checkbox("PII Security Detection", value=False)
+pii_redaction_setting = st.sidebar.checkbox("Physical PII Blackout", value=False)
 smart_naming_setting = st.sidebar.checkbox("Smart Filenaming", value=True)
 
 st.sidebar.markdown("**Page Detection**")
@@ -157,10 +157,48 @@ def process_single_image_cached(img_bgr, settings_dict):
     return smart_scan_document(img_bgr, **settings_dict)
 
 @st.cache_data(show_spinner=False)
-def run_ocr_cached(pil_img, lang):
-    if not TESSERACT_AVAILABLE: return ""
-    try: return pytesseract.image_to_string(pil_img, lang=lang)
-    except Exception: return ""
+def run_ocr_and_redact_cached(pil_img, lang, do_redact):
+    if not TESSERACT_AVAILABLE: return pil_img, "", []
+    try:
+        text = pytesseract.image_to_string(pil_img, lang=lang)
+        if not do_redact:
+            return pil_img, text, []
+            
+        data = pytesseract.image_to_data(pil_img, lang=lang, output_type=Output.DICT)
+        found_labels = set()
+        matches = []
+        
+        for label, pattern in RE_PATTERNS.items():
+            for match in re.finditer(pattern, text):
+                found_labels.add(label)
+                matches.extend(match.group().split())
+                
+        if not found_labels:
+            return pil_img, text, []
+            
+        img_copy = pil_img.copy()
+        draw = ImageDraw.Draw(img_copy)
+        
+        n_boxes = len(data['text'])
+        for i in range(n_boxes):
+            word = data['text'][i].strip()
+            if not word: continue
+            
+            should_redact = (word in matches)
+            if not should_redact:
+                for label, pattern in RE_PATTERNS.items():
+                    if re.match(pattern, word):
+                        should_redact = True
+                        found_labels.add(label)
+                        break
+                        
+            if should_redact:
+                (x, y, w, h) = (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
+                draw.rectangle([x, y, x + w, y + h], fill="black")
+                
+        return img_copy, text, list(found_labels)
+    except Exception:
+        return pil_img, "", []
 
 def pil_to_bgr(pil_img):
     if pil_img.mode != "RGB": pil_img = pil_img.convert("RGB")
@@ -255,9 +293,13 @@ if final_image_list:
             if qr: qr_results.append(f"{name}: {qr}")
             
             scanned_pil = bgr_to_pil(scanned_bgr)
-            text = run_ocr_cached(scanned_pil, ocr_lang) if ocr_enabled else ""
+            
+            if ocr_enabled:
+                scanned_pil, text, pii = run_ocr_and_redact_cached(scanned_pil, ocr_lang, pii_redaction_setting)
+            else:
+                text, pii = "", []
+                
             dtype, sname = analyze_document_context(text)
-            pii = detect_pii(text) if pii_redaction_setting else []
             
             processed_results.append((name, image, scanned_pil, text, qr, table, dtype, sname, pii))
             
