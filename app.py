@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 import fitz  # PyMuPDF
 from pytesseract import Output
+import sys
 import os
 import io
 import zipfile
