@@ -3,9 +3,9 @@
 **Production Grade | 100% Offline | AI-Powered Intelligence**
 
 ## 🚀 Live Demo
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ocrdocumentprocessing-bvrsqpfkapv6jz3xgmtxx7.streamlit.app/)
 
-**Try it now:** [ocrdocumentprocessing.streamlit.app](https://ocrdocumentprocessing-8vmeufh6tcjf3heqdnsyct.streamlit.app/)
+**Try it now:** [ocrdocumentprocessing.streamlit.app](https://ocrdocumentprocessing-bvrsqpfkapv6jz3xgmtxx7.streamlit.app/)
 
 ---
 
