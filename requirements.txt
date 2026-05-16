@@ -3,10 +3,6 @@ opencv-python-headless
 numpy
 Pillow
 pymupdf
-paddleocr
-paddlepaddle
-presidio-analyzer
-presidio-anonymizer
-spacy
-ollama
+pytesseract
 scikit-learn
+groq

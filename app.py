@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 import fitz  # PyMuPDF
-from pytesseract import Output
 import sys
 import os
 import io
@@ -26,39 +25,34 @@ except ImportError:
     from src.smart_scanner import smart_scan_document
 
 # ──────────────────────────────────────────
-# OCR, NLP & LLM INITIALIZATION
+# OCR & LLM INITIALIZATION
 # ──────────────────────────────────────────
-PADDLEOCR_AVAILABLE = False
+TESSERACT_AVAILABLE = False
 try:
-    from paddleocr import PaddleOCR
-    # Initialize PaddleOCR
-    ocr_engine = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
-    PADDLEOCR_AVAILABLE = True
+    import pytesseract
+    def find_tesseract():
+        path = shutil.which("tesseract")
+        if path: return path
+        for p in ["/usr/bin/tesseract", "/usr/local/bin/tesseract"]:
+            if os.path.exists(p): return p
+        for p in [r"C:\Program Files\Tesseract-OCR\tesseract.exe", r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))]:
+            if os.path.exists(p): return p
+        return None
+    tess_path = find_tesseract()
+    if tess_path:
+        pytesseract.pytesseract.tesseract_cmd = tess_path
+        TESSERACT_AVAILABLE = True
+    elif os.name == 'posix':
+        TESSERACT_AVAILABLE = True
+        pytesseract.pytesseract.tesseract_cmd = "tesseract"
 except ImportError:
-    PADDLEOCR_AVAILABLE = False
+    TESSERACT_AVAILABLE = False
 
-PRESIDIO_AVAILABLE = False
 try:
-    from presidio_analyzer import AnalyzerEngine
-    from presidio_anonymizer import AnonymizerEngine
-    from presidio_anonymizer.entities import OperatorConfig
-    analyzer = AnalyzerEngine()
-    anonymizer = AnonymizerEngine()
-    PRESIDIO_AVAILABLE = True
+    from groq import Groq
+    GROQ_AVAILABLE = True
 except ImportError:
-    PRESIDIO_AVAILABLE = False
-
-OLLAMA_AVAILABLE = False
-try:
-    import ollama
-    # Test if Ollama is running
-    try:
-        ollama.list()
-        OLLAMA_AVAILABLE = True
-    except Exception:
-        OLLAMA_AVAILABLE = False
-except ImportError:
-    OLLAMA_AVAILABLE = False
+    GROQ_AVAILABLE = False
 
 # ──────────────────────────────────────────
 # CONFIGURATION & CSS
@@ -86,8 +80,15 @@ if "cam_active" not in st.session_state:
 # ──────────────────────────────────────────
 # SMART CONTEXT & EXTRACTION ENGINE
 # ──────────────────────────────────────────
-def analyze_document_context_llm(text):
-    if not OLLAMA_AVAILABLE or not text.strip():
+RE_PATTERNS = {
+    "Credit Card": r"\b(?:\d[ -]*){13,16}\b",
+    "SSN/ID": r"\b\d{3}-\d{2}-\d{4}\b|\b\d{9}\b",
+    "Email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+    "Phone": r"\b(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b"
+}
+
+def analyze_document_context_llm(text, groq_api_key):
+    if not GROQ_AVAILABLE or not groq_api_key or not text.strip():
         return "Document", "Document", {}
     
     prompt = f"""
@@ -99,7 +100,7 @@ def analyze_document_context_llm(text):
     ---
     {text[:2000]}
     ---
-    Respond ONLY with a valid JSON in this exact format:
+    Respond ONLY with a valid JSON in this exact format, with no markdown formatting:
     {{
         "document_type": "string",
         "suggested_filename": "string",
@@ -107,9 +108,13 @@ def analyze_document_context_llm(text):
     }}
     """
     try:
-        response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
-        content = response['message']['content']
-        # Try to parse JSON from response
+        client = Groq(api_key=groq_api_key)
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192",
+        )
+        content = response.choices[0].message.content
+        
         start_idx = content.find('{')
         end_idx = content.rfind('}') + 1
         if start_idx != -1 and end_idx != -1:
@@ -119,12 +124,7 @@ def analyze_document_context_llm(text):
     except Exception as e:
         pass
     
-    # Fallback to simple keyword logic if LLM fails
-    text_lower = text.lower()
-    found_type = "Document"
-    for doc_type, words in {"Invoice": ["invoice", "tax"], "Receipt": ["receipt", "total"], "ID": ["passport", "id"]}.items():
-        if any(w in text_lower for w in words): found_type = doc_type
-    return found_type, found_type, {}
+    return "Document", "Document", {}
 
 # ──────────────────────────────────────────
 # SIDEBAR
@@ -152,23 +152,23 @@ bw_setting = st.sidebar.checkbox("Black & White", value=False)
 
 st.sidebar.markdown("***")
 st.sidebar.markdown("**AI Capabilities**")
-if PADDLEOCR_AVAILABLE:
-    ocr_enabled = st.sidebar.checkbox("Extract Text (PaddleOCR)", value=True)
+
+groq_api_key = st.sidebar.text_input("Groq API Key (For AI Extraction)", type="password", help="Get a free key from console.groq.com")
+
+if TESSERACT_AVAILABLE:
+    lang_options = {
+        "English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "Arabic": "ara", 
+        "Chinese (Simp)": "chi_sim", "French": "fra", "German": "deu", "Russian": "rus", "Spanish": "spa"
+    }
+    selected_lang = st.sidebar.selectbox("OCR Language", list(lang_options.keys()))
+    ocr_lang = lang_options[selected_lang]
+    ocr_enabled = st.sidebar.checkbox("Extract Text (PyTesseract)", value=True)
 else:
     ocr_enabled = False
-    st.sidebar.warning("⚠️ PaddleOCR missing.")
+    st.sidebar.warning("⚠️ PyTesseract missing.")
 
-if PRESIDIO_AVAILABLE:
-    pii_redaction_setting = st.sidebar.checkbox("Physical PII Blackout (NLP)", value=True)
-else:
-    pii_redaction_setting = False
-    st.sidebar.warning("⚠️ Presidio NLP missing.")
-
-if OLLAMA_AVAILABLE:
-    use_llm_extraction = st.sidebar.checkbox("LLM Data Extraction", value=True)
-else:
-    use_llm_extraction = False
-    st.sidebar.warning("⚠️ Ollama (Llama 3) not running.")
+pii_redaction_setting = st.sidebar.checkbox("Physical PII Blackout (Regex)", value=True)
+use_llm_extraction = st.sidebar.checkbox("LLM Data Extraction (Groq)", value=True)
 
 st.sidebar.markdown("***")
 output_dpi = st.sidebar.select_slider("Quality", [72, 100, 150, 200, 300], 150)
@@ -181,49 +181,51 @@ max_pages_to_process = st.sidebar.slider("Max Pages", 1, 200, 50)
 def process_single_image_cached(img_bgr, settings_dict):
     return smart_scan_document(img_bgr, **settings_dict)
 
+from pytesseract import Output
+
 @st.cache_data(show_spinner=False)
-def run_ocr_and_redact_cached(img_bgr, do_redact):
-    if not PADDLEOCR_AVAILABLE: return bgr_to_pil(img_bgr), "", []
+def run_ocr_and_redact_cached(pil_img, lang, do_redact):
+    if not TESSERACT_AVAILABLE: return pil_img, "", []
     try:
-        results = ocr_engine.ocr(img_bgr, cls=True)
-        if not results or not results[0]:
-            return bgr_to_pil(img_bgr), "", []
+        text = pytesseract.image_to_string(pil_img, lang=lang)
+        if not do_redact:
+            return pil_img, text, []
             
-        lines = results[0]
-        text_full = "\n".join([line[1][0] for line in lines])
-        pil_img = bgr_to_pil(img_bgr)
+        data = pytesseract.image_to_data(pil_img, lang=lang, output_type=Output.DICT)
+        found_labels = set()
+        matches = []
         
-        if not do_redact or not PRESIDIO_AVAILABLE:
-            return pil_img, text_full, []
+        for label, pattern in RE_PATTERNS.items():
+            for match in re.finditer(pattern, text):
+                found_labels.add(label)
+                matches.extend(match.group().split())
+                
+        if not found_labels:
+            return pil_img, text, []
             
-        # Presidio Context-Aware Detection
-        analyzer_results = analyzer.analyze(text=text_full, language="en")
-        if not analyzer_results:
-            return pil_img, text_full, []
-            
-        found_labels = list(set([res.entity_type for res in analyzer_results]))
-        
-        # We need to map Presidio text matches back to PaddleOCR bounding boxes
         img_copy = pil_img.copy()
         draw = ImageDraw.Draw(img_copy)
         
-        for res in analyzer_results:
-            sensitive_word = text_full[res.start:res.end].strip()
-            if not sensitive_word: continue
+        n_boxes = len(data['text'])
+        for i in range(n_boxes):
+            word = data['text'][i].strip()
+            if not word: continue
             
-            # Find which bounding box this word belongs to
-            for line in lines:
-                bbox, (line_text, score) = line
-                if sensitive_word in line_text:
-                    box = np.array(bbox).astype(np.int32)
-                    xmin, ymin = min(box[:, 0]), min(box[:, 1])
-                    xmax, ymax = max(box[:, 0]), max(box[:, 1])
-                    draw.rectangle([xmin, ymin, xmax, ymax], fill="black")
-                    
-        return img_copy, text_full, found_labels
-    except Exception as e:
-        print(f"OCR Error: {e}")
-        return bgr_to_pil(img_bgr), "", []
+            should_redact = (word in matches)
+            if not should_redact:
+                for label, pattern in RE_PATTERNS.items():
+                    if re.match(pattern, word):
+                        should_redact = True
+                        found_labels.add(label)
+                        break
+                        
+            if should_redact:
+                (x, y, w, h) = (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
+                draw.rectangle([x, y, x + w, y + h], fill="black")
+                
+        return img_copy, text, list(found_labels)
+    except Exception:
+        return pil_img, "", []
 
 def pil_to_bgr(pil_img):
     if pil_img.mode != "RGB": pil_img = pil_img.convert("RGB")
@@ -320,13 +322,12 @@ if final_image_list:
             scanned_pil = bgr_to_pil(scanned_bgr)
             
             if ocr_enabled:
-                scanned_pil, text, pii = run_ocr_and_redact_cached(scanned_bgr, pii_redaction_setting)
+                scanned_pil, text, pii = run_ocr_and_redact_cached(scanned_pil, ocr_lang, pii_redaction_setting)
             else:
-                scanned_pil = bgr_to_pil(scanned_bgr)
                 text, pii = "", []
                 
-            if use_llm_extraction:
-                dtype, sname, extracted_json = analyze_document_context_llm(text)
+            if use_llm_extraction and groq_api_key:
+                dtype, sname, extracted_json = analyze_document_context_llm(text, groq_api_key)
             else:
                 dtype, sname, extracted_json = "Document", "Document", {}
             
