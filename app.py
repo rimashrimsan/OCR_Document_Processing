@@ -12,6 +12,7 @@ import gc
 import datetime
 import shutil
 import re
+import json
 
 # Add current directory to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -25,28 +26,39 @@ except ImportError:
     from src.smart_scanner import smart_scan_document
 
 # ──────────────────────────────────────────
-# TESSERACT INITIALIZATION
+# OCR, NLP & LLM INITIALIZATION
 # ──────────────────────────────────────────
-TESSERACT_AVAILABLE = False
+PADDLEOCR_AVAILABLE = False
 try:
-    import pytesseract
-    def find_tesseract():
-        path = shutil.which("tesseract")
-        if path: return path
-        for p in ["/usr/bin/tesseract", "/usr/local/bin/tesseract"]:
-            if os.path.exists(p): return p
-        for p in [r"C:\Program Files\Tesseract-OCR\tesseract.exe", r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(os.getenv("USERNAME", "user"))]:
-            if os.path.exists(p): return p
-        return None
-    tess_path = find_tesseract()
-    if tess_path:
-        pytesseract.pytesseract.tesseract_cmd = tess_path
-        TESSERACT_AVAILABLE = True
-    elif os.name == 'posix':
-        TESSERACT_AVAILABLE = True
-        pytesseract.pytesseract.tesseract_cmd = "tesseract"
+    from paddleocr import PaddleOCR
+    # Initialize PaddleOCR
+    ocr_engine = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+    PADDLEOCR_AVAILABLE = True
 except ImportError:
-    TESSERACT_AVAILABLE = False
+    PADDLEOCR_AVAILABLE = False
+
+PRESIDIO_AVAILABLE = False
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+    from presidio_anonymizer.entities import OperatorConfig
+    analyzer = AnalyzerEngine()
+    anonymizer = AnonymizerEngine()
+    PRESIDIO_AVAILABLE = True
+except ImportError:
+    PRESIDIO_AVAILABLE = False
+
+OLLAMA_AVAILABLE = False
+try:
+    import ollama
+    # Test if Ollama is running
+    try:
+        ollama.list()
+        OLLAMA_AVAILABLE = True
+    except Exception:
+        OLLAMA_AVAILABLE = False
+except ImportError:
+    OLLAMA_AVAILABLE = False
 
 # ──────────────────────────────────────────
 # CONFIGURATION & CSS
@@ -72,40 +84,47 @@ if "cam_active" not in st.session_state:
     st.session_state.cam_active = False
 
 # ──────────────────────────────────────────
-# SMART CONTEXT & REDACTION ENGINE
+# SMART CONTEXT & EXTRACTION ENGINE
 # ──────────────────────────────────────────
-RE_PATTERNS = {
-    "Credit Card": r"\b(?:\d[ -]*){13,16}\b",
-    "SSN/ID": r"\b\d{3}-\d{2}-\d{4}\b|\b\d{9}\b",
-    "Email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-    "Phone": r"\b(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b"
-}
-
-KEYWORDS = {
-    "Invoice": ["invoice", "bill to", "tax invoice", "amount due", "total payable"],
-    "Passport/ID": ["passport", "identity card", "license", "national id", "birth date", "expiry"],
-    "Receipt": ["receipt", "order #", "merchant", "subtotal", "cashier"]
-}
-
-def analyze_document_context(text):
+def analyze_document_context_llm(text):
+    if not OLLAMA_AVAILABLE or not text.strip():
+        return "Document", "Document", {}
+    
+    prompt = f"""
+    Analyze the following OCR text and extract structured information.
+    1. Identify the Document Type (e.g., Invoice, Receipt, Passport, ID Card, Form).
+    2. Extract key entities (e.g., Merchant Name, Total Amount, Date, ID Number) as a JSON object.
+    
+    Text:
+    ---
+    {text[:2000]}
+    ---
+    Respond ONLY with a valid JSON in this exact format:
+    {{
+        "document_type": "string",
+        "suggested_filename": "string",
+        "extracted_data": {{}}
+    }}
+    """
+    try:
+        response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
+        content = response['message']['content']
+        # Try to parse JSON from response
+        start_idx = content.find('{')
+        end_idx = content.rfind('}') + 1
+        if start_idx != -1 and end_idx != -1:
+            json_str = content[start_idx:end_idx]
+            data = json.loads(json_str)
+            return data.get("document_type", "Document"), data.get("suggested_filename", "Document"), data.get("extracted_data", {})
+    except Exception as e:
+        pass
+    
+    # Fallback to simple keyword logic if LLM fails
     text_lower = text.lower()
     found_type = "Document"
-    for doc_type, words in KEYWORDS.items():
-        if any(w in text_lower for w in words):
-            found_type = doc_type
-            break
-    suggested_name = found_type
-    lines = [l for l in text.split("\n") if l.strip()]
-    if lines:
-        first = lines[0].strip()
-        if 3 < len(first) < 30: suggested_name = f"{found_type}_{first.replace(' ', '_')}"
-    return found_type, suggested_name
-
-def detect_pii(text):
-    found = []
-    for label, pattern in RE_PATTERNS.items():
-        if re.search(pattern, text): found.append(label)
-    return found
+    for doc_type, words in {"Invoice": ["invoice", "tax"], "Receipt": ["receipt", "total"], "ID": ["passport", "id"]}.items():
+        if any(w in text_lower for w in words): found_type = doc_type
+    return found_type, found_type, {}
 
 # ──────────────────────────────────────────
 # SIDEBAR
@@ -132,19 +151,24 @@ enhance_text_setting = st.sidebar.checkbox("Enhance Contrast", value=True)
 bw_setting = st.sidebar.checkbox("Black & White", value=False)
 
 st.sidebar.markdown("***")
-st.sidebar.markdown("**Language**")
-if TESSERACT_AVAILABLE:
-    lang_options = {
-        "English": "eng", "Sinhalese": "sin", "Tamil": "tam", "Hindi": "hin", "Arabic": "ara", 
-        "Chinese (Simp)": "chi_sim", "French": "fra", "German": "deu", "Russian": "rus", "Spanish": "spa"
-    }
-    selected_lang = st.sidebar.selectbox("OCR Language", list(lang_options.keys()))
-    ocr_lang = lang_options[selected_lang]
-    ocr_enabled = st.sidebar.checkbox("Extract Text", value=True)
-    searchable_pdf_enabled = st.sidebar.checkbox("Searchable PDF", value=False)
+st.sidebar.markdown("**AI Capabilities**")
+if PADDLEOCR_AVAILABLE:
+    ocr_enabled = st.sidebar.checkbox("Extract Text (PaddleOCR)", value=True)
 else:
-    ocr_enabled = searchable_pdf_enabled = False
-    st.sidebar.warning("⚠️ OCR Engine missing.")
+    ocr_enabled = False
+    st.sidebar.warning("⚠️ PaddleOCR missing.")
+
+if PRESIDIO_AVAILABLE:
+    pii_redaction_setting = st.sidebar.checkbox("Physical PII Blackout (NLP)", value=True)
+else:
+    pii_redaction_setting = False
+    st.sidebar.warning("⚠️ Presidio NLP missing.")
+
+if OLLAMA_AVAILABLE:
+    use_llm_extraction = st.sidebar.checkbox("LLM Data Extraction", value=True)
+else:
+    use_llm_extraction = False
+    st.sidebar.warning("⚠️ Ollama (Llama 3) not running.")
 
 st.sidebar.markdown("***")
 output_dpi = st.sidebar.select_slider("Quality", [72, 100, 150, 200, 300], 150)
@@ -158,48 +182,48 @@ def process_single_image_cached(img_bgr, settings_dict):
     return smart_scan_document(img_bgr, **settings_dict)
 
 @st.cache_data(show_spinner=False)
-def run_ocr_and_redact_cached(pil_img, lang, do_redact):
-    if not TESSERACT_AVAILABLE: return pil_img, "", []
+def run_ocr_and_redact_cached(img_bgr, do_redact):
+    if not PADDLEOCR_AVAILABLE: return bgr_to_pil(img_bgr), "", []
     try:
-        text = pytesseract.image_to_string(pil_img, lang=lang)
-        if not do_redact:
-            return pil_img, text, []
+        results = ocr_engine.ocr(img_bgr, cls=True)
+        if not results or not results[0]:
+            return bgr_to_pil(img_bgr), "", []
             
-        data = pytesseract.image_to_data(pil_img, lang=lang, output_type=Output.DICT)
-        found_labels = set()
-        matches = []
+        lines = results[0]
+        text_full = "\n".join([line[1][0] for line in lines])
+        pil_img = bgr_to_pil(img_bgr)
         
-        for label, pattern in RE_PATTERNS.items():
-            for match in re.finditer(pattern, text):
-                found_labels.add(label)
-                matches.extend(match.group().split())
-                
-        if not found_labels:
-            return pil_img, text, []
+        if not do_redact or not PRESIDIO_AVAILABLE:
+            return pil_img, text_full, []
             
+        # Presidio Context-Aware Detection
+        analyzer_results = analyzer.analyze(text=text_full, language="en")
+        if not analyzer_results:
+            return pil_img, text_full, []
+            
+        found_labels = list(set([res.entity_type for res in analyzer_results]))
+        
+        # We need to map Presidio text matches back to PaddleOCR bounding boxes
         img_copy = pil_img.copy()
         draw = ImageDraw.Draw(img_copy)
         
-        n_boxes = len(data['text'])
-        for i in range(n_boxes):
-            word = data['text'][i].strip()
-            if not word: continue
+        for res in analyzer_results:
+            sensitive_word = text_full[res.start:res.end].strip()
+            if not sensitive_word: continue
             
-            should_redact = (word in matches)
-            if not should_redact:
-                for label, pattern in RE_PATTERNS.items():
-                    if re.match(pattern, word):
-                        should_redact = True
-                        found_labels.add(label)
-                        break
-                        
-            if should_redact:
-                (x, y, w, h) = (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
-                draw.rectangle([x, y, x + w, y + h], fill="black")
-                
-        return img_copy, text, list(found_labels)
-    except Exception:
-        return pil_img, "", []
+            # Find which bounding box this word belongs to
+            for line in lines:
+                bbox, (line_text, score) = line
+                if sensitive_word in line_text:
+                    box = np.array(bbox).astype(np.int32)
+                    xmin, ymin = min(box[:, 0]), min(box[:, 1])
+                    xmax, ymax = max(box[:, 0]), max(box[:, 1])
+                    draw.rectangle([xmin, ymin, xmax, ymax], fill="black")
+                    
+        return img_copy, text_full, found_labels
+    except Exception as e:
+        print(f"OCR Error: {e}")
+        return bgr_to_pil(img_bgr), "", []
 
 def pil_to_bgr(pil_img):
     if pil_img.mode != "RGB": pil_img = pil_img.convert("RGB")
@@ -296,16 +320,20 @@ if final_image_list:
             scanned_pil = bgr_to_pil(scanned_bgr)
             
             if ocr_enabled:
-                scanned_pil, text, pii = run_ocr_and_redact_cached(scanned_pil, ocr_lang, pii_redaction_setting)
+                scanned_pil, text, pii = run_ocr_and_redact_cached(scanned_bgr, pii_redaction_setting)
             else:
+                scanned_pil = bgr_to_pil(scanned_bgr)
                 text, pii = "", []
                 
-            dtype, sname = analyze_document_context(text)
+            if use_llm_extraction:
+                dtype, sname, extracted_json = analyze_document_context_llm(text)
+            else:
+                dtype, sname, extracted_json = "Document", "Document", {}
             
-            processed_results.append((name, image, scanned_pil, text, qr, table, dtype, sname, pii))
+            processed_results.append((name, image, scanned_pil, text, qr, table, dtype, sname, pii, extracted_json))
             
             if text:
-                all_text_list.append(f"--- {name} ({dtype}) ---\n{text}")
+                all_text_list.append(f"--- {name} ({dtype}) ---\n{text}\nData: {json.dumps(extracted_json)}")
                 
             # Add to the combined PDF
             buf = io.BytesIO()
@@ -330,7 +358,7 @@ if final_image_list:
         c_pdf.close()
 
 if st.session_state.processed_data:
-    for name, original, cleaned, text, qr, table, dtype, sname, pii in st.session_state.processed_data:
+    for name, original, cleaned, text, qr, table, dtype, sname, pii, extracted_json in st.session_state.processed_data:
         st.markdown(f"### {name}")
         badges = f"<span class='badge badge-blue'>{dtype}</span>"
         if qr: badges += f"<span class='badge'>🔍 QR Found</span>"
@@ -343,6 +371,10 @@ if st.session_state.processed_data:
         col2.image(cleaned, caption="Cleaned")
 
         if smart_naming_setting: st.caption(f"Suggested: **{sname}.pdf**")
+        
+        if extracted_json:
+            with st.expander("🤖 AI Data Extraction"):
+                st.json(extracted_json)
 
     st.divider()
     st.markdown("**📥 Downloads**")
